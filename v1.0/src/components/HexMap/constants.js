@@ -58,6 +58,15 @@ export const PROBABILITY_OF_REEDS_ON_ELIGIBLE_TILE = 0.55;
 export const NUMBER_OF_FOXES = 5;
 export const FOX_MAX_JUMP_HEIGHT_DIFFERENCE = HEX_SIZE * 0.75;
 
+// --- Fox Footprints ---
+export const FOX_FOOTPRINT_TEXTURE_URL = 'https://cdn0.iconfinder.com/data/icons/footprints-3/64/FOX-fox_terrier-wildlife-animals-carnivore-512.png'; // Replace with your texture
+export const FOX_FOOTPRINT_SIZE = 0.1;
+export const FOX_FOOTPRINT_LIFETIME_SECONDS = 15.0; // How long footprints last
+export const FOX_FOOTPRINT_INTERVAL_SECONDS = 0.35; // Time between dropping footprints while moving
+export const FOX_FOOTPRINT_OPACITY = 0.6;
+export const FOX_FOOTPRINT_Y_OFFSET = 0.015; // Slightly above ground to prevent z-fighting
+export const MIN_SNOW_FOR_FOOTPRINTS = 0.3; // Min snowAccumulationRatio for footprints
+
 // --- Sun, Moon & Lighting ---
 export const SHADOW_MAP_SIZE = 4096 * 4;
 
@@ -79,19 +88,37 @@ export const WEATHER_TYPES = {
     CLEAR: 'CLEAR',
     CLOUDY: 'CLOUDY',
     RAINY: 'RAINY',
+    SNOW: 'SNOW',
 };
 export const INITIAL_WEATHER = WEATHER_TYPES.CLEAR;
-export const SUN_INTENSITY_CLOUDY_FACTOR = 0.3;  // Sun light is 30% of normal when cloudy
-export const MOON_INTENSITY_CLOUDY_FACTOR = 0.2; // Moon light is 20% of normal when cloudy
+export const SUN_INTENSITY_CLOUDY_FACTOR = 0.3;
+export const MOON_INTENSITY_CLOUDY_FACTOR = 0.2;
 
 // Rain Settings
 export const RAIN_PARTICLE_COUNT = 100000;
-export const RAIN_AREA_XZ_FACTOR = 1.5;         // How much larger than map XZ the rain spawns
-export const RAIN_AREA_Y_MAX = 50;              // Max height rain particles spawn from
+export const RAIN_AREA_XZ_FACTOR = 1.5;
+export const RAIN_AREA_Y_MAX = 50;
 export const RAIN_FALL_SPEED = 30;
 export const RAIN_PARTICLE_SIZE = 0.05;
 export const RAIN_PARTICLE_OPACITY = 0.4;
-export const RAIN_COLOR = 0xAAAAFF;             // Bluish tint for rain
+export const RAIN_COLOR = 0xAAAAFF;
+
+// Snow Settings
+export const SNOW_PARTICLE_COUNT = 50000;
+export const SNOW_AREA_XZ_FACTOR = 1.7;
+export const SNOW_AREA_Y_MAX = 40;
+export const SNOW_FALL_SPEED = 2.5;
+export const SNOW_PARTICLE_SIZE = 0.15;
+export const SNOW_PARTICLE_OPACITY = 0.7;
+export const SNOW_PARTICLE_TEXTURE_URL = 'https://threejs.org/examples/textures/sprites/snowflake2.png';
+export const SNOW_DRIFT_SPEED_X_FACTOR = 0.1;
+export const SNOW_DRIFT_SPEED_Z_FACTOR = 0.05;
+
+// Snow Cover on Ground/Assets
+export const SNOW_COVER_COLOR = 0xE0E5E8;
+export const MAX_SNOW_COVER_LERP_FACTOR = 0.85;
+export const SNOW_ACCUMULATION_SECONDS = 10.0;
+export const SNOW_MELT_SECONDS = 15.0;
 
 // --- Skybox & Textures ---
 export const SKYBOX_IMAGE_BASE_PATH = 'https://threejs.org/examples/textures/cube/SwedishRoyalCastle/';

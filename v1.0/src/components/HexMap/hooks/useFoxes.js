@@ -2,7 +2,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import {
-    NUMBER_OF_FOXES, FOX_MAX_JUMP_HEIGHT_DIFFERENCE, TILE_TYPES
+    NUMBER_OF_FOXES, FOX_MAX_JUMP_HEIGHT_DIFFERENCE, TILE_TYPES, SEASONS,
+    FOX_FOOTPRINT_TEXTURE_URL, FOX_FOOTPRINT_SIZE, FOX_FOOTPRINT_LIFETIME_SECONDS,
+    FOX_FOOTPRINT_INTERVAL_SECONDS, FOX_FOOTPRINT_OPACITY, MIN_SNOW_FOR_FOOTPRINTS,
+    FOX_FOOTPRINT_Y_OFFSET
 } from '../constants';
 import {
     createFoxModel, disposeFoxMaterials, FOX_SPEED, FOX_TURN_SPEED,
@@ -17,6 +20,7 @@ const ACTUAL_FOX_IDLE_TIME_MIN = 0.5;
 const ACTUAL_FOX_IDLE_TIME_MAX = 2.5;
 const STUCK_FOX_IDLE_TIME_MIN = 0.3;
 const STUCK_FOX_IDLE_TIME_MAX = 0.8;
+const FOX_MODEL_GROUND_OFFSET = 0.05;
 
 const getTileKey = (c, r) => `${c},${r}`;
 
@@ -40,30 +44,49 @@ const stepInterpolationMidpoint = (t, transitionWindow = 0.2) => {
 
     if (t <= startTransition) return 0;
     if (t >= endTransition) return 1;
-
     const progressInWindow = (t - startTransition) / transitionWindow;
     return progressInWindow < 0.5
         ? 2 * progressInWindow * progressInWindow
         : 1 - Math.pow(-2 * progressInWindow + 2, 2) / 2;
 };
 
-const useFoxes = (coreElements, landTiles, landTileMap, gridColumns, gridRows) => {
+const useFoxes = (coreElements, landTiles, landTileMap, gridColumns, gridRows, season, snowAccumulationRatio) => {
     const [foxSystemData, setFoxSystemData] = useState(null);
     const foxesArrayRef = useRef([]);
+    const textureLoaderRef = useRef(null);
+    const footprintTextureRef = useRef(null);
+    const footprintMaterialRef = useRef(null);
+    const footprintGeometryRef = useRef(null);
+    const footprintsGroupRef = useRef(null);
+    const activeFootprintsRef = useRef([]);
 
     useEffect(() => {
-        console.log("useFoxes: useEffect for setup. Core ready:", !!(coreElements && coreElements.isReady), "LandTiles count:", landTiles?.length);
-
         if (!coreElements || !coreElements.isReady || !coreElements.scene || !(coreElements.scene instanceof THREE.Scene) ||
             !landTiles || landTiles.length === 0 || !landTileMap || landTileMap.size === 0 ||
             gridColumns === undefined || gridRows === undefined) {
-
             if (foxSystemData) setFoxSystemData(null);
             return;
         }
 
         const { scene } = coreElements;
-        console.log("useFoxes: Initializing Three.js objects for foxes...");
+        textureLoaderRef.current = new THREE.TextureLoader();
+        footprintTextureRef.current = textureLoaderRef.current.load(FOX_FOOTPRINT_TEXTURE_URL,
+            () => console.log("Fox footprint texture loaded."),
+            undefined,
+            (err) => console.error("Error loading fox footprint texture:", err)
+        );
+        footprintMaterialRef.current = new THREE.MeshBasicMaterial({
+            map: footprintTextureRef.current,
+            transparent: true,
+            opacity: FOX_FOOTPRINT_OPACITY,
+            depthWrite: false,
+            alphaTest: 0.1,
+            side: THREE.DoubleSide,
+        });
+        footprintGeometryRef.current = new THREE.PlaneGeometry(FOX_FOOTPRINT_SIZE, FOX_FOOTPRINT_SIZE);
+
+        footprintsGroupRef.current = new THREE.Group();
+        scene.add(footprintsGroupRef.current);
 
         const foxGroupInstance = new THREE.Group();
         foxGroupInstance.renderOrder = 0;
@@ -80,47 +103,48 @@ const useFoxes = (coreElements, landTiles, landTileMap, gridColumns, gridRows) =
             const spawnTileIndex = Math.floor(Math.random() * landTiles.length);
             const spawnTile = landTiles[spawnTileIndex];
             const foxModel = createFoxModel();
-            const foxYOffset = 0.05;
-            foxModel.position.set(spawnTile.x, spawnTile.y + foxYOffset, spawnTile.z);
+
+            foxModel.position.set(spawnTile.x, spawnTile.y + FOX_MODEL_GROUND_OFFSET, spawnTile.z);
             foxGroupInstance.add(foxModel);
 
             foxesArrayRef.current.push({
                 model: foxModel,
                 currentTile: spawnTile,
-                targetTile: null,
+                startTileY: spawnTile.y,
+                targetTileY: spawnTile.y,
                 startPosition: foxModel.position.clone(),
                 targetPosition: new THREE.Vector3().copy(foxModel.position),
                 movementProgress: 0,
                 state: 'idle',
                 idleTimer: Math.random() * (ACTUAL_FOX_IDLE_TIME_MAX - ACTUAL_FOX_IDLE_TIME_MIN) + ACTUAL_FOX_IDLE_TIME_MIN,
                 animationTime: Math.random() * 100,
+                footprintCooldown: 0,
+                nextFootprintSide: Math.random() < 0.5 ? 'left' : 'right', // Randomly start left or right
             });
         }
 
-        console.log("useFoxes: Foxes created, setting state to ready.");
         setFoxSystemData({
             foxGroup: foxGroupInstance,
             isReady: true
         });
 
         return () => {
-            console.log("useFoxes: Cleaning up fox system...");
-            if (foxGroupInstance && scene && foxGroupInstance.parent === scene) {
-                foxGroupInstance.traverse(node => {
-                    if (node.isMesh && node.geometry) {
-                        node.geometry.dispose();
-                    } else if (node !== foxGroupInstance && node.userData && node.userData.legs) {
-                        node.traverse(childMesh => {
-                            if (childMesh.isMesh && childMesh.geometry) {
-                                childMesh.geometry.dispose();
-                            }
-                        });
-                    }
-                });
-                scene.remove(foxGroupInstance);
-            }
+            if (foxGroupInstance && scene && foxGroupInstance.parent === scene) scene.remove(foxGroupInstance);
             disposeFoxMaterials();
             foxesArrayRef.current = [];
+
+            if (footprintsGroupRef.current && scene && footprintsGroupRef.current.parent === scene) {
+                activeFootprintsRef.current.forEach(fp => footprintsGroupRef.current.remove(fp.mesh));
+                scene.remove(footprintsGroupRef.current);
+            }
+            activeFootprintsRef.current = [];
+            if (footprintGeometryRef.current) footprintGeometryRef.current.dispose();
+            if (footprintMaterialRef.current) footprintMaterialRef.current.dispose();
+            if (footprintTextureRef.current) footprintTextureRef.current.dispose();
+            footprintGeometryRef.current = null;
+            footprintMaterialRef.current = null;
+            footprintTextureRef.current = null;
+            footprintsGroupRef.current = null;
             setFoxSystemData(null);
         };
     }, [coreElements, landTiles, landTileMap, gridColumns, gridRows]);
@@ -128,12 +152,17 @@ const useFoxes = (coreElements, landTiles, landTileMap, gridColumns, gridRows) =
 
     const updateFoxes = useCallback((deltaTime, elapsedTime) => {
         if (!foxSystemData || !foxSystemData.isReady || foxesArrayRef.current.length === 0 ||
-            !landTileMap || !coreElements || !coreElements.isReady) {
+            !landTileMap || !coreElements || !coreElements.isReady ||
+            season === undefined || snowAccumulationRatio === undefined ||
+            !footprintsGroupRef.current || !footprintMaterialRef.current || !footprintGeometryRef.current) {
             return;
         }
 
-        foxesArrayRef.current.forEach((fox, index) => {
+        const canLeaveFootprints = season === SEASONS.WINTER && snowAccumulationRatio >= MIN_SNOW_FOR_FOOTPRINTS;
+
+        foxesArrayRef.current.forEach((fox) => {
             fox.animationTime += deltaTime;
+            if (fox.footprintCooldown > 0) fox.footprintCooldown -= deltaTime;
 
             if (fox.state === 'idle') {
                 fox.idleTimer -= deltaTime;
@@ -158,9 +187,10 @@ const useFoxes = (coreElements, landTiles, landTileMap, gridColumns, gridRows) =
 
                 if (possibleTargets.length > 0) {
                     fox.targetTile = possibleTargets[Math.floor(Math.random() * possibleTargets.length)];
-                    const foxYOffset = 0.05;
-                    fox.targetPosition.set(fox.targetTile.x, fox.targetTile.y + foxYOffset, fox.targetTile.z);
+                    fox.targetPosition.set(fox.targetTile.x, fox.targetTile.y + FOX_MODEL_GROUND_OFFSET, fox.targetTile.z);
                     fox.startPosition.copy(fox.model.position);
+                    fox.startTileY = fox.currentTile.y;
+                    fox.targetTileY = fox.targetTile.y;
                     fox.state = 'moving';
                     fox.movementProgress = 0;
                 } else {
@@ -177,20 +207,14 @@ const useFoxes = (coreElements, landTiles, landTileMap, gridColumns, gridRows) =
                 if (distanceToTargetXZ > 0.05) {
                     const targetWorldAngle = Math.atan2(direction.z, direction.x);
                     const rotTargetAngle = Math.atan2(-direction.z, direction.x);
-
                     let currentModelRotationY = fox.model.rotation.y;
                     while (rotTargetAngle - currentModelRotationY > Math.PI) currentModelRotationY += 2 * Math.PI;
                     while (rotTargetAngle - currentModelRotationY < -Math.PI) currentModelRotationY -= 2 * Math.PI;
-
                     const turnLerpFactor = Math.min(FOX_TURN_SPEED * deltaTime, 1);
                     fox.model.rotation.y = THREE.MathUtils.lerp(currentModelRotationY, rotTargetAngle, turnLerpFactor);
 
-                    let angleDiff = rotTargetAngle - fox.model.rotation.y;
-                    while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
-                    while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
-                    angleDiff = Math.abs(angleDiff);
-
-                    if (angleDiff < Math.PI / 3) {
+                    let angleDiff = Math.abs(rotTargetAngle - fox.model.rotation.y);
+                    if (angleDiff < Math.PI / 2.5) {
                         const moveDistance = Math.min(FOX_SPEED * deltaTime, distanceToTargetXZ);
                         fox.model.position.x += Math.cos(targetWorldAngle) * moveDistance;
                         fox.model.position.z += Math.sin(targetWorldAngle) * moveDistance;
@@ -200,19 +224,45 @@ const useFoxes = (coreElements, landTiles, landTileMap, gridColumns, gridRows) =
                         const targetPosXZ = fox.targetPosition.clone().setY(0);
                         const distCoveredXZ = startPosXZ.distanceTo(currentPosXZ);
                         const totalDistForSegmentXZ = startPosXZ.distanceTo(targetPosXZ);
-                        let actualMovementProgressThisSegment = 0;
-                        if (totalDistForSegmentXZ > 0.01) {
-                            actualMovementProgressThisSegment = Math.min(distCoveredXZ / totalDistForSegmentXZ, 1.0);
-                        } else if (distanceToTargetXZ <= 0.05) {
-                            actualMovementProgressThisSegment = 1.0;
+                        fox.movementProgress = totalDistForSegmentXZ > 0.01 ? Math.min(distCoveredXZ / totalDistForSegmentXZ, 1.0) : (distanceToTargetXZ <= 0.05 ? 1.0 : 0);
+
+                        const yProgressArc = stepInterpolationMidpoint(fox.movementProgress, 0.2);
+                        fox.model.position.y = THREE.MathUtils.lerp(fox.startPosition.y, fox.targetPosition.y, yProgressArc);
+
+                        const foxFeetGroundLevelY = fox.model.position.y - FOX_MODEL_GROUND_OFFSET;
+
+                        if (canLeaveFootprints && fox.footprintCooldown <= 0) {
+                            const footprintY = foxFeetGroundLevelY + FOX_FOOTPRINT_Y_OFFSET;
+
+                            const footprintForwardOffset = 0.03;
+                            const footprintSideOffsetVal = 0.035;
+                            let sideMultiplier = (fox.nextFootprintSide === 'left') ? 1 : -1;
+
+                            const print = new THREE.Mesh(footprintGeometryRef.current, footprintMaterialRef.current.clone());
+
+                            const localOffsetX = footprintSideOffsetVal * sideMultiplier;
+                            const localOffsetZ = -footprintForwardOffset;
+
+                            const worldOffsetX = localOffsetX * Math.cos(fox.model.rotation.y) - localOffsetZ * Math.sin(fox.model.rotation.y);
+                            const worldOffsetZ = localOffsetX * Math.sin(fox.model.rotation.y) + localOffsetZ * Math.cos(fox.model.rotation.y);
+
+                            print.position.x = fox.model.position.x + worldOffsetX;
+                            print.position.y = footprintY;
+                            print.position.z = fox.model.position.z + worldOffsetZ;
+
+                            print.rotation.x = -Math.PI / 2;
+                            print.rotation.z = fox.model.rotation.y - Math.PI / 2;
+                            footprintsGroupRef.current.add(print);
+                            activeFootprintsRef.current.push({ mesh: print, creationTime: elapsedTime });
+
+                            fox.footprintCooldown = FOX_FOOTPRINT_INTERVAL_SECONDS;
+                            fox.nextFootprintSide = (fox.nextFootprintSide === 'left') ? 'right' : 'left';
                         }
-                        fox.movementProgress = actualMovementProgressThisSegment;
-                        const yProgress = stepInterpolationMidpoint(fox.movementProgress, 0.2);
-                        fox.model.position.y = THREE.MathUtils.lerp(fox.startPosition.y, fox.targetPosition.y, yProgress);
                     }
                 } else {
                     fox.model.position.copy(fox.targetPosition);
                     fox.currentTile = fox.targetTile;
+                    fox.startTileY = fox.targetTile.y;
                     fox.targetTile = null;
                     fox.state = 'idle';
                     fox.idleTimer = Math.random() * (ACTUAL_FOX_IDLE_TIME_MAX - ACTUAL_FOX_IDLE_TIME_MIN) + ACTUAL_FOX_IDLE_TIME_MIN;
@@ -256,7 +306,21 @@ const useFoxes = (coreElements, landTiles, landTileMap, gridColumns, gridRows) =
                 }
             }
         });
-    }, [foxSystemData, landTileMap, gridColumns, gridRows, coreElements]);
+
+        const newActiveFootprints = [];
+        for (const fp of activeFootprintsRef.current) {
+            const age = elapsedTime - fp.creationTime;
+            if (age < FOX_FOOTPRINT_LIFETIME_SECONDS) {
+                fp.mesh.material.opacity = FOX_FOOTPRINT_OPACITY * (1 - (age / FOX_FOOTPRINT_LIFETIME_SECONDS));
+                newActiveFootprints.push(fp);
+            } else {
+                footprintsGroupRef.current.remove(fp.mesh);
+                if (fp.mesh.material) fp.mesh.material.dispose();
+            }
+        }
+        activeFootprintsRef.current = newActiveFootprints;
+
+    }, [foxSystemData, landTileMap, gridColumns, gridRows, coreElements, season, snowAccumulationRatio]);
 
     if (foxSystemData && foxSystemData.isReady) {
         return {

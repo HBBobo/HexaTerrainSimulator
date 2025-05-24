@@ -2,15 +2,17 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import {
-    HEX_SIZE, HEX_HEIGHT_MAX, TILE_TYPES, TILE_COLORS,
+    HEX_SIZE, HEX_HEIGHT_MAX, TILE_TYPES, TILE_COLORS, SEASONS, WEATHER_TYPES,
+    SNOW_COVER_COLOR, MAX_SNOW_COVER_LERP_FACTOR, // Use MAX_SNOW_COVER_LERP_FACTOR
     MIN_TREES_PER_FOREST_TILE, MAX_ADDITIONAL_TREES_PER_FOREST_TILE, PROBABILITY_OF_ADDITIONAL_TREE,
     ROCKS_PER_STONE_TILE_MIN, ROCKS_PER_STONE_TILE_MAX, PROBABILITY_OF_ROCK_ON_STONE_TILE,
-    REED_CLUMPS_PER_ELIGIBLE_TILE_MIN, REED_CLUMPS_PER_ELIGIBLE_TILE_MAX, PROBABILITY_OF_REEDS_ON_ELIGIBLE_TILE
+    REED_CLUMPS_PER_ELIGIBLE_TILE_MIN, REED_CLUMPS_PER_ELIGIBLE_TILE_MAX, PROBABILITY_OF_REEDS_ON_ELIGIBLE_TILE,
+    TRANSPARENT_LAYER_Y
 } from '../constants';
 import { createHexagonGeometry, createHexagonInstance } from '../utils/threeUtils';
-import { createCypressTree, disposeTreeMaterial } from '../utils/treeUtils';
-import { createRock, disposeRockMaterials } from '../utils/rockUtils';
-import { createReedClump, disposeReedMaterial } from '../utils/reedsUtils';
+import { createCypressTree, disposeTreeMaterial, updateTreeMaterialsForSnow } from '../utils/treeUtils';
+import { createRock, disposeRockMaterials, updateRockMaterialsForSnow } from '../utils/rockUtils';
+import { createReedClump, disposeReedMaterial, updateReedMaterialsForSnow } from '../utils/reedsUtils';
 
 const POINTY_HEX_TRUE_WIDTH_CALC = HEX_SIZE * Math.sqrt(3);
 const POINTY_HEX_TRUE_HEIGHT_CALC = HEX_SIZE * 2;
@@ -18,10 +20,12 @@ const POINTY_HEX_VERT_SPACING_CALC = POINTY_HEX_TRUE_HEIGHT_CALC * 0.75;
 
 const getTileKey = (c, r) => `${c},${r}`;
 
-const useWorldGeometry = (coreElements, islandHeightData) => {
+// Added snowAccumulationRatio prop
+const useWorldGeometry = (coreElements, islandHeightData, weatherCondition, season, snowAccumulationRatio) => {
     const [worldGeoState, setWorldGeoState] = useState(null);
     const treeAnimationIndexRef = useRef(0);
     const reedAnimationIndexRef = useRef(0);
+    const originalHexMaterialColorsRef = useRef(new Map());
 
     useEffect(() => {
         if (!coreElements || !coreElements.isReady || !coreElements.scene || !(coreElements.scene instanceof THREE.Scene) ||
@@ -30,9 +34,10 @@ const useWorldGeometry = (coreElements, islandHeightData) => {
             return;
         }
 
-        const { scene, worldMapWidth, worldMapDepth, gridColumns, gridRows } = coreElements;
+        const { scene, worldMapWidth, worldMapDepth } = coreElements;
 
         console.log("useWorldGeometry: Initializing...");
+        originalHexMaterialColorsRef.current.clear();
 
         const hexGridGroup = new THREE.Group(); hexGridGroup.renderOrder = 0; scene.add(hexGridGroup);
         const treeGroup = new THREE.Group(); treeGroup.renderOrder = 0; scene.add(treeGroup);
@@ -62,13 +67,15 @@ const useWorldGeometry = (coreElements, islandHeightData) => {
             if (tileData.type !== TILE_TYPES.DEEP_WATER && tileData.type !== TILE_TYPES.SHALLOW_WATER) {
                 const hexRenderHeight = Math.max(0.05, totalWorldHeightFromBase);
                 const hexYPosition = hexRenderHeight / 2;
-                currentTileData.y = hexYPosition + (hexRenderHeight / 2);
+                currentTileData.y = hexRenderHeight;
 
                 const hexGeometry = createHexagonGeometry(HEX_SIZE, hexRenderHeight);
                 const tileHexColor = TILE_COLORS[tileData.type] || 0x7F7F7F;
                 const tileMaterial = new THREE.MeshStandardMaterial({
                     color: tileHexColor, metalness: 0.1, roughness: 0.85, flatShading: true,
                 });
+                originalHexMaterialColorsRef.current.set(tileMaterial, { color: tileMaterial.color.clone() });
+
                 const hexInstance = createHexagonInstance(hexGeometry, tileMaterial, worldX, hexYPosition, worldZ);
                 hexGridGroup.add(hexInstance);
                 landTiles.push(currentTileData);
@@ -82,7 +89,9 @@ const useWorldGeometry = (coreElements, islandHeightData) => {
                         const angle_offset = Math.random() * Math.PI * 2;
                         const randomXOffset = r_offset * Math.cos(angle_offset);
                         const randomZOffset = r_offset * Math.sin(angle_offset);
+
                         treeObject.position.set(worldX + randomXOffset, currentTileData.y, worldZ + randomZOffset);
+
                         treeObject.rotation.y = Math.random() * Math.PI * 2;
                         treeObject.userData.windPhaseOffset = Math.random() * Math.PI * 2;
                         treeObject.userData.windSpeedMultiplier = 0.8 + Math.random() * 0.4;
@@ -98,14 +107,14 @@ const useWorldGeometry = (coreElements, islandHeightData) => {
                         const numRocks = Math.floor(Math.random() * (ROCKS_PER_STONE_TILE_MAX - ROCKS_PER_STONE_TILE_MIN + 1)) + ROCKS_PER_STONE_TILE_MIN;
                         for (let i = 0; i < numRocks; i++) {
                             const rock = createRock();
-                            const boundingBox = new THREE.Box3().setFromObject(rock);
-                            const rockBottomOffset = -boundingBox.min.y;
                             const maxOffsetFactor = 0.8;
                             const r_offset = Math.sqrt(Math.random()) * HEX_SIZE * maxOffsetFactor;
                             const angle_offset = Math.random() * Math.PI * 2;
                             const randomXOffset = r_offset * Math.cos(angle_offset);
                             const randomZOffset = r_offset * Math.sin(angle_offset);
+
                             rock.position.set(worldX + randomXOffset, currentTileData.y, worldZ + randomZOffset);
+
                             rock.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2);
                             rockGroup.add(rock);
                         }
@@ -114,9 +123,10 @@ const useWorldGeometry = (coreElements, islandHeightData) => {
             }
 
             if (tileData.type === TILE_TYPES.SHALLOW_WATER) {
+                currentTileData.y = TRANSPARENT_LAYER_Y;
                 if (Math.random() < PROBABILITY_OF_REEDS_ON_ELIGIBLE_TILE) {
                     const numClumps = Math.floor(Math.random() * (REED_CLUMPS_PER_ELIGIBLE_TILE_MAX - REED_CLUMPS_PER_ELIGIBLE_TILE_MIN + 1)) + REED_CLUMPS_PER_ELIGIBLE_TILE_MIN;
-                    const reedBedY = 0;
+                    const reedBedY = TRANSPARENT_LAYER_Y - 0.04;
                     for (let i = 0; i < numClumps; i++) {
                         const reedClump = createReedClump();
                         const maxOffsetFactor = 0.85;
@@ -135,6 +145,7 @@ const useWorldGeometry = (coreElements, islandHeightData) => {
 
         console.log("useWorldGeometry: Geometry created, setting state.");
         setWorldGeoState({
+            hexGridGroup, treeGroup, rockGroup, reedGroup,
             animatedTrees, animatedReeds, landTiles, landTileMap,
             isReady: true
         });
@@ -146,7 +157,7 @@ const useWorldGeometry = (coreElements, islandHeightData) => {
                     groupToRemove.traverse(node => {
                         if (node.isMesh) {
                             if (node.geometry) node.geometry.dispose();
-                            if (node.material && !disposeSharedMaterialFn) {
+                            if (node.material && node.parent === hexGridGroup) {
                                 if (Array.isArray(node.material)) node.material.forEach(m => { if (m.dispose) m.dispose(); });
                                 else if (node.material.dispose) node.material.dispose();
                             }
@@ -162,11 +173,40 @@ const useWorldGeometry = (coreElements, islandHeightData) => {
             disposeAndRemoveGroup(rockGroup, disposeRockMaterials);
             disposeAndRemoveGroup(reedGroup, disposeReedMaterial);
 
+            originalHexMaterialColorsRef.current.clear();
             treeAnimationIndexRef.current = 0;
             reedAnimationIndexRef.current = 0;
             setWorldGeoState(null);
         };
     }, [coreElements, islandHeightData]);
+
+    useEffect(() => {
+        if (!worldGeoState || !worldGeoState.isReady || snowAccumulationRatio === undefined) { // Check snowAccumulationRatio defined
+            return;
+        }
+
+        const snowCoverMainColor = new THREE.Color(SNOW_COVER_COLOR);
+        // Current actual lerp factor based on snow accumulation
+        const currentLerpFactor = snowAccumulationRatio * MAX_SNOW_COVER_LERP_FACTOR;
+
+        worldGeoState.hexGridGroup.children.forEach(hexMesh => {
+            if (hexMesh.material) {
+                const originalMatInfo = originalHexMaterialColorsRef.current.get(hexMesh.material);
+                if (originalMatInfo) {
+                    // Always lerp, if currentLerpFactor is 0, it will be the original color
+                    hexMesh.material.color.copy(originalMatInfo.color).lerp(snowCoverMainColor, currentLerpFactor);
+                    hexMesh.material.needsUpdate = true;
+                }
+            }
+        });
+
+        // Pass the dynamic lerp factor (snowAccumulationRatio) to asset material updaters
+        updateTreeMaterialsForSnow(snowAccumulationRatio); // Will internally use it with MAX_SNOW_COVER_LERP_FACTOR
+        updateRockMaterialsForSnow(snowAccumulationRatio);
+        updateReedMaterialsForSnow(snowAccumulationRatio);
+
+    }, [worldGeoState, snowAccumulationRatio]); // Removed weatherCondition and season, now depends on snowAccumulationRatio
+
 
     const updateAnimations = useCallback((elapsedTime) => {
         if (!worldGeoState || !worldGeoState.isReady) return;
@@ -181,7 +221,7 @@ const useWorldGeometry = (coreElements, islandHeightData) => {
         const animateStaggered = (items, indexRef, speed, strength, axis = 'z', secondAxis = null, secondAxisFactor = 0.6) => {
             if (!items || items.length === 0) return;
             const numItems = items.length;
-            const itemsToUpdate = Math.ceil(numItems / ANIMATION_UPDATE_STRIDE);
+            const itemsToUpdate = Math.max(1, Math.ceil(numItems / ANIMATION_UPDATE_STRIDE));
             for (let i = 0; i < itemsToUpdate; i++) {
                 const currentIndex = (indexRef.current + i) % numItems;
                 const item = items[currentIndex];

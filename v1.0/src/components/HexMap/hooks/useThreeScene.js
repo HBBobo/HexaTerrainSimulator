@@ -7,6 +7,7 @@ import useWorldGeometry from './useWorldGeometry';
 import useWater from './useWater';
 import useFoxes from './useFoxes';
 import useWeatherEffects from './useWeatherEffects';
+import { SEASONS, WEATHER_TYPES, SNOW_ACCUMULATION_SECONDS, SNOW_MELT_SECONDS } from '../constants';
 
 const useThreeScene = (
     mountRef,
@@ -22,20 +23,33 @@ const useThreeScene = (
     const clockRef = useRef(null);
     const allElementsCacheRef = useRef({});
 
+    const [snowAccumulationRatio, setSnowAccumulationRatio] = useState(0);
+    const targetSnowAccumulationRef = useRef(0);
+
     const coreElements = useThreeCore(mountRef, gridColumns, gridRows);
     allElementsCacheRef.current.core = coreElements;
+
+    useEffect(() => {
+        const isSnowingInWinter = season === SEASONS.WINTER && weatherCondition === WEATHER_TYPES.SNOW;
+        targetSnowAccumulationRef.current = isSnowingInWinter ? 1 : 0;
+    }, [season, weatherCondition]);
+
 
     const sunSkyElements = useSunAndSky(
         coreElements,
         timeOfDay,
         season,
-        weatherCondition
+        weatherCondition,
+        snowAccumulationRatio
     );
     allElementsCacheRef.current.sunSky = sunSkyElements;
 
     const worldGeometryElements = useWorldGeometry(
         coreElements,
-        islandHeightData
+        islandHeightData,
+        weatherCondition,
+        season,
+        snowAccumulationRatio
     );
     allElementsCacheRef.current.worldGeometry = worldGeometryElements;
 
@@ -49,13 +63,16 @@ const useThreeScene = (
         worldGeometryElements?.landTiles,
         worldGeometryElements?.landTileMap,
         gridColumns,
-        gridRows
+        gridRows,
+        season, // Pass season
+        snowAccumulationRatio // Pass snowAccumulationRatio
     );
     allElementsCacheRef.current.foxes = foxSystem;
 
     const weatherEffectSystem = useWeatherEffects(
         coreElements,
-        weatherCondition
+        weatherCondition,
+        season
     );
     allElementsCacheRef.current.weatherEffects = weatherEffectSystem;
 
@@ -65,14 +82,16 @@ const useThreeScene = (
         const sunSkyRdy = sunSkyElements && sunSkyElements.isReady;
         const worldRdy = worldGeometryElements && worldGeometryElements.isReady && worldGeometryElements.landTiles && worldGeometryElements.landTileMap;
         const waterRdy = waterElements && waterElements.isReady;
-        const foxesRdy = foxSystem && foxSystem.isReady;
-        const weatherEffectsRdy = weatherEffectSystem && weatherEffectSystem.isReady;
+        const baseSystemsRdy = !!(coreRdy && sunSkyRdy && worldRdy && waterRdy);
 
-        const allSystemsGo = !!(coreRdy && sunSkyRdy && worldRdy && waterRdy && foxesRdy && weatherEffectsRdy);
+        const foxesActuallyRdy = foxSystem ? foxSystem.isReady : true;
+        const weatherEffectsActuallyRdy = weatherEffectSystem ? weatherEffectSystem.isReady : true;
+
+        const allSystemsGo = baseSystemsRdy && foxesActuallyRdy && weatherEffectsActuallyRdy;
 
         if (allSystemsGo !== isFullyInitialized) {
             if (allSystemsGo) console.log("useThreeScene: All systems GO! Fully initialized.");
-            else console.log("useThreeScene: Waiting for one or more systems to initialize...");
+            else console.log("useThreeScene: Waiting for systems...", { coreRdy, sunSkyRdy: sunSkyElements?.isReady, worldRdy, waterRdy, foxesActuallyRdy, weatherEffectsActuallyRdy });
             setIsFullyInitialized(allSystemsGo);
         }
     }, [coreElements, sunSkyElements, worldGeometryElements, waterElements, foxSystem, weatherEffectSystem, isFullyInitialized]);
@@ -105,11 +124,27 @@ const useThreeScene = (
             const deltaTime = clockRef.current.getDelta();
             const elapsedTime = clockRef.current.getElapsedTime();
 
-            if (elements.sunSky?.isReady && elements.sunSky?.update) elements.sunSky.update();
+            setSnowAccumulationRatio(prevRatio => {
+                let newRatio = prevRatio;
+                const target = targetSnowAccumulationRef.current;
+                if (newRatio < target) {
+                    newRatio += deltaTime / SNOW_ACCUMULATION_SECONDS;
+                    newRatio = Math.min(newRatio, target);
+                } else if (newRatio > target) {
+                    newRatio -= deltaTime / SNOW_MELT_SECONDS;
+                    newRatio = Math.max(newRatio, target);
+                }
+                return newRatio;
+            });
+
             if (elements.water?.isReady && elements.water?.updateAnimation) elements.water.updateAnimation(deltaTime);
             if (elements.worldGeometry?.isReady && elements.worldGeometry?.updateAnimations) elements.worldGeometry.updateAnimations(elapsedTime);
             if (elements.foxes?.isReady && elements.foxes?.updateFoxes) elements.foxes.updateFoxes(deltaTime, elapsedTime);
-            if (elements.weatherEffects?.isReady && elements.weatherEffects?.updateRain) elements.weatherEffects.updateRain(deltaTime);
+
+            if (elements.weatherEffects?.isReady) {
+                if (elements.weatherEffects?.updateRain) elements.weatherEffects.updateRain(deltaTime);
+                if (elements.weatherEffects?.updateSnow) elements.weatherEffects.updateSnow(deltaTime);
+            }
 
             if (elements.core.controls) elements.core.controls.update();
             if (elements.core.renderer && elements.core.scene && elements.core.camera) {
