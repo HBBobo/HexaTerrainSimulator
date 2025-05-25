@@ -2,13 +2,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import {
-    HEX_SIZE, HEX_HEIGHT_MAX, TILE_TYPES, TILE_COLORS, SEASONS, WEATHER_TYPES,
+    HEX_SIZE, HEX_HEIGHT_MAX, TILE_TYPES, TILE_COLORS,
     SNOW_COVER_COLOR, MAX_SNOW_COVER_LERP_FACTOR, BUILDING_TYPES,
     MIN_TREES_PER_FOREST_TILE, MAX_ADDITIONAL_TREES_PER_FOREST_TILE, PROBABILITY_OF_ADDITIONAL_TREE,
     ROCKS_PER_STONE_TILE_MIN, ROCKS_PER_STONE_TILE_MAX, PROBABILITY_OF_ROCK_ON_STONE_TILE,
     REED_CLUMPS_PER_ELIGIBLE_TILE_MIN, REED_CLUMPS_PER_ELIGIBLE_TILE_MAX, PROBABILITY_OF_REEDS_ON_ELIGIBLE_TILE,
     TRANSPARENT_LAYER_Y
-} from '../constants';
+} from '../constants'; // Removed SEASONS, WEATHER_TYPES as not directly used here
 import { createHexagonGeometry, createHexagonInstance } from '../utils/threeUtils';
 import { createCypressTree, disposeTreeMaterial, updateTreeMaterialsForSnow } from '../utils/treeUtils';
 import { createRock, disposeRockMaterials, updateRockMaterialsForSnow } from '../utils/rockUtils';
@@ -18,13 +18,13 @@ const POINTY_HEX_TRUE_WIDTH_CALC = HEX_SIZE * Math.sqrt(3);
 const POINTY_HEX_TRUE_HEIGHT_CALC = HEX_SIZE * 2;
 const POINTY_HEX_VERT_SPACING_CALC = POINTY_HEX_TRUE_HEIGHT_CALC * 0.75;
 
-const getTileKey = (c, r) => `${c},${r}`;
+// const getTileKey = (c, r) => `${c},${r}`; // Not used locally
 
 const useWorldGeometry = (coreElements, islandHeightData, weatherCondition, season, snowAccumulationRatio, getBuildingOnTileFromParent) => {
     const [worldGeoState, setWorldGeoState] = useState(null);
     const treeAnimationIndexRef = useRef(0);
     const reedAnimationIndexRef = useRef(0);
-    const originalHexMaterialColorsRef = useRef(new Map()); // Used again for MeshStandardMaterial
+    const originalHexMaterialColorsRef = useRef(new Map());
 
     useEffect(() => {
         if (!coreElements || !coreElements.isReady || !coreElements.scene || !(coreElements.scene instanceof THREE.Scene) ||
@@ -37,12 +37,24 @@ const useWorldGeometry = (coreElements, islandHeightData, weatherCondition, seas
 
         const { scene, worldMapWidth, worldMapDepth } = coreElements;
 
-        console.log(`useWorldGeometry: Initializing with MeshStandardMaterial. Using Scene ID: ${scene.uuid}`);
+        console.log(`useWorldGeometry: Initializing. Scene ID: ${scene.uuid}`);
         originalHexMaterialColorsRef.current.clear();
 
         const hexGridGroup = new THREE.Group(); hexGridGroup.renderOrder = 0; hexGridGroup.name = "HexGridGroup";
-        if (scene.getObjectByName("HexGridGroup")) {
-            const oldGroup = scene.getObjectByName("HexGridGroup"); oldGroup.clear(); scene.remove(oldGroup);
+        // Clear previous group if exists (e.g., from hot reload)
+        const oldGridGroup = scene.getObjectByName("HexGridGroup");
+        if (oldGridGroup) {
+            oldGridGroup.traverse(node => {
+                if (node.isMesh) {
+                    if (node.geometry) node.geometry.dispose();
+                    if (node.material) {
+                        if (Array.isArray(node.material)) node.material.forEach(m => m.dispose());
+                        else node.material.dispose();
+                    }
+                }
+            });
+            oldGridGroup.clear();
+            scene.remove(oldGridGroup);
         }
         scene.add(hexGridGroup);
 
@@ -79,20 +91,19 @@ const useWorldGeometry = (coreElements, islandHeightData, weatherCondition, seas
 
             if (tileData.type !== TILE_TYPES.DEEP_WATER && tileData.type !== TILE_TYPES.SHALLOW_WATER) {
                 const hexRenderHeight = Math.max(0.05, totalWorldHeightFromBase);
-                const hexYPosition = hexRenderHeight / 2;
-                currentTileFullData.y = hexRenderHeight;
+                const hexYPosition = hexRenderHeight / 2; // Center of the hex body
+                currentTileFullData.y = hexRenderHeight; // Top surface of the hex
 
                 const hexGeometry = createHexagonGeometry(HEX_SIZE, hexRenderHeight);
                 const tileHexColor = TILE_COLORS[tileData.type] || 0x7F7F7F;
-                // Revert to MeshStandardMaterial
+
                 const tileMaterial = new THREE.MeshStandardMaterial({
                     color: tileHexColor,
                     metalness: 0.1,
                     roughness: 0.85,
-                    flatShading: true, // Note: for true flat shading, geometry normals matter most
+                    flatShading: true,
                 });
-                originalHexMaterialColorsRef.current.set(tileMaterial, { color: tileMaterial.color.clone(), c, r });
-
+                originalHexMaterialColorsRef.current.set(tileMaterial, { color: tileMaterial.color.clone(), c, r, type: tileData.type });
 
                 const hexInstance = createHexagonInstance(hexGeometry, tileMaterial, worldX, hexYPosition, worldZ);
                 hexInstance.userData = {
@@ -100,7 +111,7 @@ const useWorldGeometry = (coreElements, islandHeightData, weatherCondition, seas
                     c: c,
                     r: r,
                     tileKey: key,
-                    tileData: currentTileFullData
+                    tileData: currentTileFullData // Pass full data for raycasting
                 };
                 hexGridGroup.add(hexInstance);
                 hexMeshesForRaycasting.push(hexInstance);
@@ -114,7 +125,7 @@ const useWorldGeometry = (coreElements, islandHeightData, weatherCondition, seas
                         const angle_offset = Math.random() * Math.PI * 2;
                         const randomXOffset = r_offset * Math.cos(angle_offset);
                         const randomZOffset = r_offset * Math.sin(angle_offset);
-                        treeObject.position.set(worldX + randomXOffset, currentTileFullData.y, worldZ + randomZOffset);
+                        treeObject.position.set(worldX + randomXOffset, currentTileFullData.y, worldZ + randomZOffset); // Place base of tree on hex surface
                         treeObject.rotation.y = Math.random() * Math.PI * 2;
                         treeObject.userData.windPhaseOffset = Math.random() * Math.PI * 2;
                         treeObject.userData.windSpeedMultiplier = 0.8 + Math.random() * 0.4;
@@ -135,7 +146,7 @@ const useWorldGeometry = (coreElements, islandHeightData, weatherCondition, seas
                             const angle_offset = Math.random() * Math.PI * 2;
                             const randomXOffset = r_offset * Math.cos(angle_offset);
                             const randomZOffset = r_offset * Math.sin(angle_offset);
-                            rock.position.set(worldX + randomXOffset, currentTileFullData.y, worldZ + randomZOffset);
+                            rock.position.set(worldX + randomXOffset, currentTileFullData.y, worldZ + randomZOffset); // Place base of rock on hex surface
                             rock.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2);
                             rockGroup.add(rock);
                         }
@@ -143,10 +154,10 @@ const useWorldGeometry = (coreElements, islandHeightData, weatherCondition, seas
                 }
 
             } else if (tileData.type === TILE_TYPES.SHALLOW_WATER) {
-                currentTileFullData.y = TRANSPARENT_LAYER_Y;
+                currentTileFullData.y = TRANSPARENT_LAYER_Y; // Shallow water tiles are effectively at water surface level
                 if (Math.random() < PROBABILITY_OF_REEDS_ON_ELIGIBLE_TILE) {
                     const numClumps = Math.floor(Math.random() * (REED_CLUMPS_PER_ELIGIBLE_TILE_MAX - REED_CLUMPS_PER_ELIGIBLE_TILE_MIN + 1)) + REED_CLUMPS_PER_ELIGIBLE_TILE_MIN;
-                    const reedBedY = TRANSPARENT_LAYER_Y - 0.04;
+                    const reedBedY = TRANSPARENT_LAYER_Y - 0.04; // Reeds sit slightly below water surface visually
                     for (let i = 0; i < numClumps; i++) {
                         const reedClump = createReedClump();
                         const maxOffsetFactor = 0.85;
@@ -160,13 +171,13 @@ const useWorldGeometry = (coreElements, islandHeightData, weatherCondition, seas
                         reedGroup.add(reedClump); animatedReeds.push(reedClump);
                     }
                 }
-            } else {
-                currentTileFullData.y = TRANSPARENT_LAYER_Y - 0.5;
+            } else { // DEEP_WATER
+                currentTileFullData.y = TRANSPARENT_LAYER_Y - 0.5; // Deep water tiles are conceptually below water surface
             }
             landTileMap.set(key, currentTileFullData);
         });
 
-        console.log("useWorldGeometry: Geometry created, setting state. Land Tile Map size:", landTileMap.size, "Hex meshes:", hexMeshesForRaycasting.length);
+        console.log("useWorldGeometry: Geometry created. Land Tile Map size:", landTileMap.size, "Hex meshes:", hexMeshesForRaycasting.length);
         setWorldGeoState({
             hexGridGroup, treeGroup, rockGroup, reedGroup,
             animatedTrees, animatedReeds, landTiles, landTileMap,
@@ -175,45 +186,42 @@ const useWorldGeometry = (coreElements, islandHeightData, weatherCondition, seas
         });
 
         return () => {
-            console.log(`useWorldGeometry: Cleaning up from scene: ${scene.uuid}. Disposing standard materials...`);
-            // No separate hexMaterialsRef for MeshStandardMaterial, they are on the meshes.
-            // originalHexMaterialColorsRef only stores colors, not materials themselves for disposal.
+            console.log(`useWorldGeometry: Cleaning up from scene: ${scene.uuid}.`);
 
-            const disposeAndRemoveGroup = (groupToRemove, disposeSharedMaterialFn) => {
-                if (groupToRemove) {
-                    groupToRemove.traverse(node => {
+            const disposeGroupContents = (group) => {
+                if (group) {
+                    group.traverse(node => {
                         if (node.isMesh) {
                             if (node.geometry) node.geometry.dispose();
-                            if (node.material) { // Dispose all materials on ungroup
-                                if (Array.isArray(node.material)) {
-                                    node.material.forEach(m => m.dispose());
-                                } else {
-                                    node.material.dispose();
-                                }
+                            // Materials on hexes are unique instances here, so dispose them.
+                            // Shared materials for trees, rocks, reeds are handled by their specific dispose functions.
+                            if (node.material && originalHexMaterialColorsRef.current.has(node.material)) {
+                                node.material.dispose();
                             }
                         }
                     });
-                    groupToRemove.clear();
-                    if (scene && groupToRemove.parent === scene) {
-                        scene.remove(groupToRemove);
-                    } else if (groupToRemove.parent) {
-                        groupToRemove.parent.remove(groupToRemove);
-                    }
+                    group.clear();
+                    if (scene && group.parent === scene) scene.remove(group);
                 }
-                if (disposeSharedMaterialFn) disposeSharedMaterialFn();
             };
 
-            disposeAndRemoveGroup(hexGridGroup); // Will dispose hex MeshStandardMaterials
-            disposeAndRemoveGroup(treeGroup, disposeTreeMaterial);
-            disposeAndRemoveGroup(rockGroup, disposeRockMaterials);
-            disposeAndRemoveGroup(reedGroup, disposeReedMaterial);
+            disposeGroupContents(hexGridGroup);
+            // For trees, rocks, reeds, the group itself is cleared and removed,
+            // but the shared materials are disposed separately to avoid multiple disposals.
+            if (treeGroup) { treeGroup.clear(); if (scene && treeGroup.parent === scene) scene.remove(treeGroup); }
+            if (rockGroup) { rockGroup.clear(); if (scene && rockGroup.parent === scene) scene.remove(rockGroup); }
+            if (reedGroup) { reedGroup.clear(); if (scene && reedGroup.parent === scene) scene.remove(reedGroup); }
+
+            disposeTreeMaterial();
+            disposeRockMaterials();
+            disposeReedMaterial();
 
             originalHexMaterialColorsRef.current.clear();
             treeAnimationIndexRef.current = 0;
             reedAnimationIndexRef.current = 0;
             setWorldGeoState(null);
         };
-    }, [coreElements, islandHeightData]);
+    }, [coreElements, islandHeightData]); // islandHeightData dependency for regeneration if map changes
 
     useEffect(() => {
         if (!worldGeoState || !worldGeoState.isReady || snowAccumulationRatio === undefined || typeof getBuildingOnTileFromParent !== 'function') {
@@ -222,17 +230,16 @@ const useWorldGeometry = (coreElements, islandHeightData, weatherCondition, seas
 
         const snowCoverMainColor = new THREE.Color(SNOW_COVER_COLOR);
 
-        // Iterate over originalHexMaterialColorsRef to update MeshStandardMaterial instances
         originalHexMaterialColorsRef.current.forEach((matInfo, materialInstance) => {
             let currentLerpFactor = snowAccumulationRatio * MAX_SNOW_COVER_LERP_FACTOR;
 
             const buildingOnTile = getBuildingOnTileFromParent(matInfo.c, matInfo.r);
             if (buildingOnTile && buildingOnTile.type === BUILDING_TYPES.CAMPFIRE && buildingOnTile.isLit) {
-                currentLerpFactor = 0.01; // Reduce snow on tile if campfire is lit
+                currentLerpFactor *= 0.05; // Reduce snow on tile if campfire is lit
             }
 
             materialInstance.color.copy(matInfo.color).lerp(snowCoverMainColor, currentLerpFactor);
-            // materialInstance.needsUpdate = true; // For MeshStandardMaterial, color change is usually direct
+            // materialInstance.needsUpdate = true; // Usually not needed for MeshStandardMaterial color change
         });
 
 
@@ -240,14 +247,14 @@ const useWorldGeometry = (coreElements, islandHeightData, weatherCondition, seas
         updateRockMaterialsForSnow(snowAccumulationRatio);
         updateReedMaterialsForSnow(snowAccumulationRatio);
 
-    }, [worldGeoState, snowAccumulationRatio, getBuildingOnTileFromParent]);
+    }, [worldGeoState, snowAccumulationRatio, getBuildingOnTileFromParent, weatherCondition, season]);
 
 
     const updateAnimations = useCallback((elapsedTime) => {
         if (!worldGeoState || !worldGeoState.isReady) return;
         const { animatedTrees, animatedReeds } = worldGeoState;
 
-        const ANIMATION_UPDATE_STRIDE = 3;
+        const ANIMATION_UPDATE_STRIDE = 3; // Process 1/3rd of items per frame
         const TREE_WIND_SPEED = 0.7;
         const TREE_WIND_STRENGTH = 0.03;
         const REED_WIND_SPEED = 1.2;
@@ -256,7 +263,7 @@ const useWorldGeometry = (coreElements, islandHeightData, weatherCondition, seas
         const animateStaggered = (items, indexRef, speed, strength, axis = 'z', secondAxis = null, secondAxisFactor = 0.6) => {
             if (!items || items.length === 0) return;
             const numItems = items.length;
-            const itemsToUpdate = Math.max(1, Math.ceil(numItems / ANIMATION_UPDATE_STRIDE));
+            const itemsToUpdate = Math.max(1, Math.floor(numItems / ANIMATION_UPDATE_STRIDE)); // Ensure at least 1 item updated
             for (let i = 0; i < itemsToUpdate; i++) {
                 const currentIndex = (indexRef.current + i) % numItems;
                 const item = items[currentIndex];

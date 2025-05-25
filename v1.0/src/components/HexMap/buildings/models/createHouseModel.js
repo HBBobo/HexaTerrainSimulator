@@ -1,7 +1,7 @@
 // src/components/HexMap/buildings/models/createHouseModel.js
 import * as THREE from 'three';
 import { BUILDING_TYPES } from '../BuildingTypes'
-import { getCachedMaterial } from '../utils/materialManager'; // Adjust path
+import { getCachedMaterial } from '../utils/materialManager';
 
 const HOUSE_WALL_COLOR = 0xD2B48C;
 const HOUSE_ROOF_COLOR = 0xA52A2A;
@@ -114,9 +114,9 @@ export const createHouseModel = (tileY) => {
     doorFrameRight.position.set(doorWidth / 2 + frameThickness / 2, tileY + (doorHeight + frameThickness) / 2, baseDepth / 2 + 0.005);
     houseGroup.add(doorFrameRight);
 
-    const doorFrameTop = new THREE.Mesh(doorFrameTopGeo, frameMaterial);
-    doorFrameTop.position.set(0, tileY + doorHeight + frameThickness / 2, baseDepth / 2 + 0.005);
-    houseGroup.add(doorFrameTop);
+    const doorFrameTopM = new THREE.Mesh(doorFrameTopGeo, frameMaterial); // Renamed to avoid conflict
+    doorFrameTopM.position.set(0, tileY + doorHeight + frameThickness / 2, baseDepth / 2 + 0.005);
+    houseGroup.add(doorFrameTopM);
 
     const windowSize = 0.15;
     const windowDepth = 0.02;
@@ -125,12 +125,12 @@ export const createHouseModel = (tileY) => {
         transparent: true,
         opacity: 0.6,
         side: THREE.DoubleSide,
-        emissive: HOUSE_WINDOW_EMISSIVE_COLOR,
+        emissive: new THREE.Color(HOUSE_WINDOW_EMISSIVE_COLOR),
         emissiveIntensity: 0.0
-    }, true); // Mark as special emissive if it has unique animation logic
+    }, true); // Mark as special emissive
     const windowGlassGeo = new THREE.BoxGeometry(windowSize, windowSize, windowDepth / 2);
 
-    const createdWindowGlassMaterials = [windowGlassMaterial];
+    const createdWindowGlassMaterials = [windowGlassMaterial]; // Store for animation
 
     const createFramedWindow = (posX, posY, posZ, rotY = 0) => {
         const windowGroup = new THREE.Group();
@@ -190,21 +190,24 @@ export const createHouseModel = (tileY) => {
     const lampPostGeo = new THREE.CylinderGeometry(lampPostRadius, lampPostRadius, lampPostHeight, 6);
     const lampPost = new THREE.Mesh(lampPostGeo, lampPostMaterial);
     lampPost.position.y = lampPostHeight / 2;
+    lampPost.userData.isLampComponent = true; // For snow logic
     lampGroup.add(lampPost);
+
     const lampShadeSize = 0.06;
     const lampShadeMaterial = getCachedMaterial(LAMP_SHADE_COLOR, {
         roughness: 0.7,
-        emissive: HOUSE_LAMP_EMISSIVE_COLOR,
+        emissive: new THREE.Color(HOUSE_LAMP_EMISSIVE_COLOR),
         emissiveIntensity: 0.0
     }, true); // Mark as special emissive
-    lampShadeMaterial.userData = { isRoof: true, isLampShade: true };
     const lampShadeGeo = new THREE.BoxGeometry(lampShadeSize, lampShadeSize * 0.8, lampShadeSize);
     const lampShade = new THREE.Mesh(lampShadeGeo, lampShadeMaterial);
     lampShade.position.y = lampPostHeight + (lampShadeSize * 0.8) / 2 - 0.01;
+    lampShade.userData.isLampComponent = true; // Shade is also part of the lamp assembly for snow
     lampGroup.add(lampShade);
-    const doorLampLight = new THREE.PointLight(HOUSE_LAMP_EMISSIVE_COLOR, 0, 0.8, 1.5);
+
+    const doorLampLight = new THREE.PointLight(new THREE.Color(HOUSE_LAMP_EMISSIVE_COLOR), 0, 0.8, 1.5);
     doorLampLight.position.y = lampShade.position.y;
-    doorLampLight.castShadow = false;
+    doorLampLight.castShadow = false; // Optimization: disable shadow for small lamp
     lampGroup.add(doorLampLight);
     const lampSideMultiplier = 1;
     lampGroup.position.set(
@@ -212,7 +215,7 @@ export const createHouseModel = (tileY) => {
         tileY,
         baseDepth / 2 + 0.02
     );
-    lampGroup.castShadow = true;
+    lampGroup.castShadow = true; // Lamp post can cast shadow if desired, but light itself won't
     houseGroup.add(lampGroup);
     houseGroup.userData.doorLampLight = doorLampLight;
     houseGroup.userData.doorLampShadeMaterial = lampShadeMaterial;
@@ -251,10 +254,12 @@ export const createHouseModel = (tileY) => {
             targetLampIntensity = Math.max(0.03, targetLampIntensity);
             targetLampEmissive = targetLampIntensity * 0.8;
         }
-        if (createdWindowGlassMaterials.length > 0) {
-            const material = createdWindowGlassMaterials[0];
-            material.emissiveIntensity = THREE.MathUtils.lerp(material.emissiveIntensity, targetWindowIntensity, 0.1);
-            material.needsUpdate = true;
+        if (createdWindowGlassMaterials.length > 0) { // Ensure array is not empty
+            const material = createdWindowGlassMaterials[0]; // Access the shared material
+            if (material) {
+                material.emissiveIntensity = THREE.MathUtils.lerp(material.emissiveIntensity, targetWindowIntensity, 0.1);
+                material.needsUpdate = true;
+            }
         }
         const lampLight = houseGroup.userData.doorLampLight;
         const lampShadeMat = houseGroup.userData.doorLampShadeMaterial;

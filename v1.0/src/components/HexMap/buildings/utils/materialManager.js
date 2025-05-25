@@ -1,23 +1,12 @@
 // src/components/HexMap/buildings/utils/materialManager.js
 import * as THREE from 'three';
-import { SNOW_COVER_COLOR, MAX_SNOW_COVER_LERP_FACTOR, BUILDING_TYPES } from '../../constants'; // Adjust path
-
-// Specific emissive colors to identify special materials that shouldn't be snowed over
-// or have their own animation logic.
-const FLAME_COLOR_ORANGE_HEX = 0xFFAA33;
-const FLAME_COLOR_YELLOW_HEX = 0xFFFFAA;
-const HOUSE_WINDOW_EMISSIVE_COLOR_HEX = 0xFFFFAA;
-const HOUSE_LAMP_EMISSIVE_COLOR_HEX = 0xFFE082;
-const MINE_LAMP_EMISSIVE_COLOR_HEX = 0xFFB74D;
-
+import { SNOW_COVER_COLOR, MAX_SNOW_COVER_LERP_FACTOR, BUILDING_TYPES } from '../../constants';
 
 const buildingMaterialsCache = new Map(); // Key: material, Value: { originalColor: Color, originalEmissive?: Color }
 
 export const getCachedMaterial = (colorHex, props = {}, isSpecialEmissive = false) => {
-    // For truly unique materials (like animated flames, specific lamp glows),
-    // isSpecialEmissive = true bypasses caching or uses a more specific key if needed.
-    // For now, we cache all non-flame/glow materials.
     const material = new THREE.MeshStandardMaterial({ color: colorHex, ...props });
+    material.userData.isSpecialEmissive = isSpecialEmissive; // Store this flag directly on material
 
     if (!isSpecialEmissive) { // Only cache standard, reusable materials
         const cacheEntry = { originalColor: material.color.clone() };
@@ -50,22 +39,19 @@ export const updateBuildingInstanceSnow = (buildingInstance, snowAccumulationRat
         isMineLampOn = buildingInstance.userData.mineLampLight.intensity > 0.05;
     }
 
+    let isHarbourPierLampOn = false;
+    if (buildingType === BUILDING_TYPES.HARBOUR && buildingInstance.userData.pierLampLight) {
+        isHarbourPierLampOn = buildingInstance.userData.pierLampLight.intensity > 0.05;
+    }
+
+
     buildingInstance.traverse((node) => {
         if (node.isMesh && node.material) {
             const materials = Array.isArray(node.material) ? node.material : [node.material];
             materials.forEach(material => {
                 // Skip materials that handle their own appearance (emissive parts of lights/flames)
-                if (material.emissive && material.emissiveIntensity > 0) {
-                    const emissiveHex = material.emissive.getHex();
-                    if (
-                        emissiveHex === FLAME_COLOR_ORANGE_HEX ||
-                        emissiveHex === FLAME_COLOR_YELLOW_HEX ||
-                        emissiveHex === HOUSE_WINDOW_EMISSIVE_COLOR_HEX ||
-                        (material.userData?.isLampShade && emissiveHex === HOUSE_LAMP_EMISSIVE_COLOR_HEX) ||
-                        (material.userData?.isLampShade && emissiveHex === MINE_LAMP_EMISSIVE_COLOR_HEX)
-                    ) {
-                        return;
-                    }
+                if (material.userData?.isSpecialEmissive) {
+                    return;
                 }
 
                 const cacheEntry = buildingMaterialsCache.get(material);
@@ -73,27 +59,27 @@ export const updateBuildingInstanceSnow = (buildingInstance, snowAccumulationRat
                     let currentLerpFactor = 0;
                     let effectiveSnowRatio = snowAccumulationRatio;
 
+                    // Specific conditions for less snow
                     if (buildingType === BUILDING_TYPES.CAMPFIRE && isCampfireLit) {
-                        effectiveSnowRatio *= 0.05;
+                        effectiveSnowRatio *= 0.05; // Campfire melts snow around it
                     }
 
-                    // Check for house lamp post. The parent of doorLampLight is the lampGroup.
-                    if (buildingType === BUILDING_TYPES.HOUSE &&
-                        buildingInstance.userData.doorLampLight &&
-                        node.parent === buildingInstance.userData.doorLampLight.parent && // Check if node is part of the lamp assembly
-                        isHouseLampOn) {
+                    // Check for lamp components being active
+                    if (node.userData?.isLampComponent && isHouseLampOn) { // House Lamp parts
                         effectiveSnowRatio *= 0.3;
                     }
-                    // Use the userData flag for mine lamp components
-                    if (node.userData?.isMineLampComponent && isMineLampOn) {
+                    if (node.userData?.isMineLampComponent && isMineLampOn) { // Mine Lamp parts
+                        effectiveSnowRatio *= 0.3;
+                    }
+                    if (node.userData?.isPierLampComponent && isHarbourPierLampOn) { // Harbour Pier Lamp parts
                         effectiveSnowRatio *= 0.3;
                     }
 
-
+                    // Apply snow based on roof status and effective ratio
                     if (material.userData?.isRoof) {
                         currentLerpFactor = effectiveSnowRatio * MAX_SNOW_COVER_LERP_FACTOR;
                     } else {
-                        currentLerpFactor = effectiveSnowRatio * MAX_SNOW_COVER_LERP_FACTOR * 0.25;
+                        currentLerpFactor = effectiveSnowRatio * MAX_SNOW_COVER_LERP_FACTOR * 0.25; // Less snow on non-roof parts
                     }
                     material.color.copy(cacheEntry.originalColor).lerp(snowColor, Math.min(currentLerpFactor, 1.0));
                     material.needsUpdate = true;

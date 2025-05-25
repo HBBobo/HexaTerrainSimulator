@@ -3,7 +3,7 @@ import { BUILDING_TYPES as BT } from './buildings/BuildingTypes'; // Import with
 
 // --- Grid & Hex Dimensions ---
 export const HEX_SIZE = 1;
-export const HEX_HEIGHT_MAX = 4.0;
+export const HEX_HEIGHT_MAX = 6.0;
 export const GRID_COLUMNS = 48;
 export const GRID_ROWS = 48;
 
@@ -23,14 +23,17 @@ export const TILE_TYPES = {
     DEEP_WATER: 'DEEP_WATER', SHALLOW_WATER: 'SHALLOW_WATER', SAND: 'SAND', CLAY: 'CLAY',
     PASTURE: 'PASTURE', FOREST: 'FOREST', STONE: 'STONE', MOUNTAIN_PEAK: 'MOUNTAIN_PEAK',
 };
-export const DULL_TILE_COLORS = {
-    [TILE_TYPES.SAND]: 0xBDB76B, [TILE_TYPES.CLAY]: 0xCD853F, [TILE_TYPES.PASTURE]: 0x8FBC8F,
-    [TILE_TYPES.FOREST]: 0x808060, [TILE_TYPES.STONE]: 0x778899, [TILE_TYPES.MOUNTAIN_PEAK]: 0xA9A9A9,
+
+export const TILE_COLORS = { // Simplified from DULL_TILE_COLORS
+    [TILE_TYPES.SAND]: 0xBDB76B,
+    [TILE_TYPES.CLAY]: 0xCD853F,
+    [TILE_TYPES.PASTURE]: 0x8FBC8F,
+    [TILE_TYPES.FOREST]: 0x808060,
+    [TILE_TYPES.STONE]: 0x778899,
+    [TILE_TYPES.MOUNTAIN_PEAK]: 0xA9A9A9,
 };
-export const TILE_COLORS = DULL_TILE_COLORS;
 
 // --- Building Types ---
-// Now imported, but keep BUILDABLE_TILE_TYPES here or move it with BUILDING_TYPES
 export const BUILDING_TYPES = BT; // Re-export if other files import from constants
 export const BUILDABLE_TILE_TYPES = [
     TILE_TYPES.SAND, TILE_TYPES.CLAY, TILE_TYPES.PASTURE, TILE_TYPES.FOREST, TILE_TYPES.STONE
@@ -77,7 +80,7 @@ export const FOX_FOOTPRINT_Y_OFFSET = 0.015;
 export const MIN_SNOW_FOR_FOOTPRINTS = 0.3;
 
 // --- Sun, Moon & Lighting ---
-export const SHADOW_MAP_SIZE = 4096 * 4;
+export const SHADOW_MAP_SIZE = 4096 * 8;
 
 // --- Time and Season ---
 export const SEASONS = { SPRING: 0, SUMMER: 1, AUTUMN: 2, WINTER: 3 };
@@ -133,3 +136,12 @@ export const SNOW_MELT_SECONDS = 15.0;
 export const SKYBOX_IMAGE_BASE_PATH = 'https://threejs.org/examples/textures/cube/SwedishRoyalCastle/';
 export const SKYBOX_IMAGE_NAMES = ['px.jpg', 'nx.jpg', 'py.jpg', 'ny.jpg', 'pz.jpg', 'nz.jpg'];
 export const WATER_NORMAL_MAP_URL = 'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/waternormals.jpg';
+
+// --- Building Light Emissive Colors (for materialManager checks) ---
+// These are used if `isSpecialEmissive` flag is not set on material.userData
+// export const FLAME_COLOR_ORANGE_HEX = 0xFFAA33; // Now handled by isSpecialEmissive
+// export const FLAME_COLOR_YELLOW_HEX = 0xFFFFAA; // Now handled by isSpecialEmissive
+// export const HOUSE_WINDOW_EMISSIVE_COLOR_HEX = 0xFFFFAA; // Now handled by isSpecialEmissive
+// export const HOUSE_LAMP_EMISSIVE_COLOR_HEX = 0xFFE082; // Now handled by isSpecialEmissive
+// export const MINE_LAMP_EMISSIVE_COLOR_HEX = 0xFFB74D; // Now handled by isSpecialEmissive
+export const PIER_LAMP_EMISSIVE_COLOR_HEX = 0xFFD700; // Still used for pier lamp light color, isSpecialEmissive handles material

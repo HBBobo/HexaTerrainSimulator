@@ -3,12 +3,12 @@ import { createHouseModel } from './createHouseModel';
 import { createCampfireModel } from './createCampfireModel';
 import { createFarmModel } from './createFarmModel';
 import { createMineModel } from './createMineModel';
-// Import other model creators here as you make them
+import { createHarbourModel } from './createHarbourModel'; // Ensure this line is correct
 
 export {
     createHouseModel,
     createCampfireModel,
     createFarmModel,
     createMineModel,
-    // Export other model creators
+    createHarbourModel, // And this line
 };

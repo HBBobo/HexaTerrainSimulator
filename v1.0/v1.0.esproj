@@ -9,8 +9,10 @@
     <BuildOutputFolder>$(MSBuildProjectDirectory)\dist</BuildOutputFolder>
   </PropertyGroup>
   <ItemGroup>
-    <Folder Include="src\components\HexMap\buidings\models\" />
-    <Folder Include="src\components\HexMap\buidings\utils\" />
+    <None Remove="src\components\HexMap\buidings\**" />
+    <TypeScriptConfiguration Remove="src\components\HexMap\buidings\**" />
+  </ItemGroup>
+  <ItemGroup>
     <Folder Include="src\components\HexMap\hooks\" />
     <Folder Include="src\components\HexMap\ui\" />
   </ItemGroup>

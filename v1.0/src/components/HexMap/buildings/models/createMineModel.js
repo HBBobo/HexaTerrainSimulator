@@ -21,11 +21,12 @@ export const createMineModel = (tileY) => {
 
     const woodMaterial = getCachedMaterial(MINE_WOOD_COLOR, { roughness: 0.85, metalness: 0.05 });
     woodMaterial.userData = { isRoof: true };
+    const woodMaterial2 = getCachedMaterial(MINE_WOOD_COLOR, { roughness: 0.85, metalness: 0.05 });
     const largeRockMaterial = getCachedMaterial(MINE_ROCK_COLOR, { roughness: 0.9, metalness: 0.1, flatShading: true });
     largeRockMaterial.userData = { isRoof: true };
     const roofMaterial = getCachedMaterial(ROOF_COLOR, { roughness: 0.9, metalness: 0.1, flatShading: true });
     roofMaterial.userData = { isRoof: true };
-    const openingMaterial = getCachedMaterial(MINE_OPENING_COLOR, { roughness: 1.0, color: MINE_OPENING_COLOR });
+    const openingMaterial = getCachedMaterial(MINE_OPENING_COLOR, { roughness: 1.0, color: new THREE.Color(MINE_OPENING_COLOR) });
 
     const mainRockGroup = new THREE.Group();
     const baseRockRadius = 0.5;
@@ -55,20 +56,20 @@ export const createMineModel = (tileY) => {
     entranceFrameGroup.position.z = entranceZPos;
     mineGroup.add(entranceFrameGroup);
 
-    const leftBeam = new THREE.Mesh(verticalBeamGeo, woodMaterial);
+    const leftBeam = new THREE.Mesh(verticalBeamGeo, woodMaterial2);
     leftBeam.position.set(-frameWidth / 2, entranceOffsetY + frameHeight / 2, 0);
     entranceFrameGroup.add(leftBeam);
 
-    const leftWall = new THREE.Mesh(wallGeo, woodMaterial);
+    const leftWall = new THREE.Mesh(wallGeo, woodMaterial2);
     leftWall.position.set(-frameWidth / 2, entranceOffsetY + frameHeight / 2 - Math.sin(roofAngle) * roofHeight / 2 + beamThickness / 2, roofHeight / 2);
     leftWall.rotation.x = roofAngle;
     entranceFrameGroup.add(leftWall);
 
-    const rightBeam = new THREE.Mesh(verticalBeamGeo, woodMaterial);
+    const rightBeam = new THREE.Mesh(verticalBeamGeo, woodMaterial2);
     rightBeam.position.set(frameWidth / 2, entranceOffsetY + frameHeight / 2, 0);
     entranceFrameGroup.add(rightBeam);
 
-    const rightWall = new THREE.Mesh(wallGeo, woodMaterial);
+    const rightWall = new THREE.Mesh(wallGeo, woodMaterial2);
     rightWall.position.set(frameWidth / 2, entranceOffsetY + frameHeight / 2 - Math.sin(roofAngle) * roofHeight / 2 + beamThickness / 2, roofHeight / 2);
     rightWall.rotation.x = roofAngle;
     entranceFrameGroup.add(rightWall);
@@ -78,7 +79,7 @@ export const createMineModel = (tileY) => {
     entranceFrameGroup.add(topBeam);
 
     const roofMesh = new THREE.Mesh(roofGeo, roofMaterial);
-    roofMesh.position.set(0, entranceOffsetY + frameHeight + beamThickness / 2 - Math.sin(roofAngle) * (roofHeight / 2), roofHeight / 2);
+    roofMesh.position.set(0, entranceOffsetY + frameHeight + beamThickness / 2 - Math.sin(roofAngle) * (roofHeight / 2) + 0.01, roofHeight / 2);
     roofMesh.rotation.x = roofAngle;
     entranceFrameGroup.add(roofMesh);
 
@@ -187,47 +188,35 @@ export const createMineModel = (tileY) => {
     const lampPostMaterial = getCachedMaterial(LAMP_POST_COLOR, { roughness: 0.7 });
     const lampShadeMaterial = getCachedMaterial(LAMP_SHADE_COLOR, {
         roughness: 0.8,
-        emissive: MINE_LAMP_EMISSIVE_COLOR,
+        emissive: new THREE.Color(MINE_LAMP_EMISSIVE_COLOR),
         emissiveIntensity: 0.0
-    }, true);
-    lampShadeMaterial.userData = { isRoof: true, isLampShade: true };
+    }, true); // isSpecialEmissive = true
+    // lampShadeMaterial.userData = { isRoof: true, isLampShade: true }; // Not needed, isSpecialEmissive handles snow
 
     const lampPostGeo = new THREE.BoxGeometry(beamThickness * 0.8, frameHeight * 0.6, beamThickness * 0.8);
     const lampPost = new THREE.Mesh(lampPostGeo, lampPostMaterial);
     lampPost.position.y = (frameHeight * 0.6) / 2;
-    lampPost.userData.isMineLampComponent = true; // Flag for snow logic
+    lampPost.userData.isMineLampComponent = true;
     mineLampGroup.add(lampPost);
 
     const lampArmGeo = new THREE.BoxGeometry(beamThickness * 0.6, beamThickness * 0.6, 0.15);
     const lampArm = new THREE.Mesh(lampArmGeo, lampPostMaterial);
     lampArm.position.set(0, frameHeight * 0.6 - beamThickness * 0.3, - 0.15 / 2 + beamThickness * 0.4);
-    lampArm.userData.isMineLampComponent = true; // Flag for snow logic
+    lampArm.userData.isMineLampComponent = true;
     lampPost.add(lampArm);
 
     const lampShadeSize = 0.07;
     const lampShadeGeo = new THREE.CylinderGeometry(lampShadeSize * 0.6, lampShadeSize, lampShadeSize * 0.8, 6);
     const lampShade = new THREE.Mesh(lampShadeGeo, lampShadeMaterial);
     lampShade.position.set(0, -lampShadeSize * 0.8 / 2 - 0.01, -0.08);
+    lampShade.userData.isMineLampComponent = true;
     lampArm.add(lampShade);
 
-    const mineLampLight = new THREE.PointLight(MINE_LAMP_EMISSIVE_COLOR, 0, 0.7, 1.2); // Start with 0 intensity
+    const mineLampLight = new THREE.PointLight(new THREE.Color(MINE_LAMP_EMISSIVE_COLOR), 0, 0.7, 1.2);
+    mineLampLight.castShadow = false; // Optimization: disable shadow for small lamp
 
-    // --- Shadow Configuration for Mine Lamp ---
-    mineLampLight.castShadow = true; // Enable shadows
-    mineLampLight.shadow.mapSize.width = 256; // Lower resolution for performance
-    mineLampLight.shadow.mapSize.height = 256;
-    mineLampLight.shadow.camera.near = 0.05; // Must be > 0
-    mineLampLight.shadow.camera.far = mineLampLight.distance > 0 ? mineLampLight.distance * 1.5 : 2; // Adjust based on light's effective distance
-    mineLampLight.shadow.bias = -0.005; // Adjust if shadow acne occurs
-    // mineLampLight.shadow.normalBias = 0.02; // Adjust if needed
-
-    // Position light relative to the shade. Since shade is child of arm, child of post, child of mineLampGroup...
-    // It's easier to add the light to the same parent as the shade (lampArm) and position it locally.
-    // Or, calculate world position once and add light to a more global group.
-    // For now, let's add it to entranceFrameGroup and update its position.
-    // Get initial world position of shade to set light position:
     const tempShadeWorldPos = new THREE.Vector3();
-    lampShade.getWorldPosition(tempShadeWorldPos); // Calculate it after lampShade is added to its parents
+    lampShade.getWorldPosition(tempShadeWorldPos);
     mineLampLight.position.copy(tempShadeWorldPos);
     mineLampLight.position.y -= 0.02;
 
@@ -239,12 +228,12 @@ export const createMineModel = (tileY) => {
         entranceOffsetY,
         -beamThickness / 2
     );
-    mineLampGroup.castShadow = true; // The lamp post itself can cast shadow
+    mineLampGroup.castShadow = true;
     entranceFrameGroup.add(mineLampGroup);
 
     mineGroup.userData.mineLampLight = mineLampLight;
     mineGroup.userData.mineLampShadeMaterial = lampShadeMaterial;
-    mineGroup.userData.lampShadeForLightPosition = lampShade; // Store ref to update light pos if shade moves
+    mineGroup.userData.lampShadeForLightPosition = lampShade;
 
     mineGroup.userData.animate = (time, timeOfDay) => {
         let targetLampIntensity = 0.0;
@@ -253,7 +242,7 @@ export const createMineModel = (tileY) => {
         const eveningStart = 18.0;
         const nightStart = 19.5;
         const morningEnd = 6.5;
-        const peakLampLightIntensity = 0.5; // Reduced a bit for performance if many shadow casters
+        const peakLampLightIntensity = 0.5;
         const peakLampEmissiveIntensity = 0.4;
 
         if (timeOfDay >= eveningStart && timeOfDay < nightStart) {
@@ -284,10 +273,8 @@ export const createMineModel = (tileY) => {
             lampShadeMat.emissiveIntensity = THREE.MathUtils.lerp(lampShadeMat.emissiveIntensity, targetLampEmissive, 0.1);
             lampLight.visible = lampLight.intensity > 0.01;
 
-            // Continuously update light position from the shade's world position
-            // This is important if the mineLampGroup or its parents can be rotated or moved
             lampShadeMesh.getWorldPosition(lampLight.position);
-            lampLight.position.y -= 0.02; // Keep it slightly below the shade
+            lampLight.position.y -= 0.02;
 
             lampShadeMat.needsUpdate = true;
         }

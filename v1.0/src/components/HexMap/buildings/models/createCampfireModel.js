@@ -83,8 +83,8 @@ export const createCampfireModel = (tileY) => {
     flameGroup.position.y = groundY + logRadius * 2.5;
     campfireGroup.add(flameGroup);
 
-    const flameMaterialOuter = getCachedMaterial(FLAME_COLOR_ORANGE, { transparent: true, opacity: 0.6, side: THREE.DoubleSide, emissive: FLAME_COLOR_ORANGE, emissiveIntensity: 0.5, depthWrite: false }, true);
-    const flameMaterialInner = getCachedMaterial(FLAME_COLOR_YELLOW, { transparent: true, opacity: 0.8, side: THREE.DoubleSide, emissive: FLAME_COLOR_YELLOW, emissiveIntensity: 0.8, depthWrite: false }, true);
+    const flameMaterialOuter = getCachedMaterial(FLAME_COLOR_ORANGE, { transparent: true, opacity: 0.6, side: THREE.DoubleSide, emissive: new THREE.Color(FLAME_COLOR_ORANGE), emissiveIntensity: 0.5, depthWrite: false }, true); // isSpecialEmissive = true
+    const flameMaterialInner = getCachedMaterial(FLAME_COLOR_YELLOW, { transparent: true, opacity: 0.8, side: THREE.DoubleSide, emissive: new THREE.Color(FLAME_COLOR_YELLOW), emissiveIntensity: 0.8, depthWrite: false }, true); // isSpecialEmissive = true
 
     const createFlamePlane = (material, size, yOffset) => {
         const planeGeo = new THREE.PlaneGeometry(size, size * 1.8);
@@ -106,10 +106,10 @@ export const createCampfireModel = (tileY) => {
 
     campfireGroup.userData.flames = [flame1Outer, flame2Outer];
 
-    const fireLight = new THREE.PointLight(FLAME_COLOR_ORANGE, 1.5, 3.5, 1.8);
+    const fireLight = new THREE.PointLight(new THREE.Color(FLAME_COLOR_ORANGE), 1.5, 3.5, 1.8);
     fireLight.position.copy(flameGroup.position);
     fireLight.position.y += 0.1;
-    fireLight.castShadow = true;
+    fireLight.castShadow = true; // Campfire shadows enabled
     fireLight.shadow.mapSize.width = 256;
     fireLight.shadow.mapSize.height = 256;
     fireLight.shadow.camera.near = 0.1;

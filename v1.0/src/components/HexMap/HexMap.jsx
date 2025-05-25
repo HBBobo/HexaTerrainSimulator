@@ -2,14 +2,15 @@
 import React, { useRef, useState, useMemo } from 'react';
 import useThreeScene from './hooks/useThreeScene';
 import SunControls from './ui/SunControls';
-import BuildingPalette from './ui/BuildingPalette'; // Import BuildingPalette
+import BuildingPalette from './ui/BuildingPalette';
 import { generateCoolIslandMap } from './utils/mapGenerator';
 import { getSunLightColor, getMoonLightColor, calculateSunPosition } from './utils/colorUtils';
 import {
     GRID_COLUMNS, GRID_ROWS, MAP_GENERATOR_DEFAULTS,
     INITIAL_TIME_OF_DAY, INITIAL_SEASON, INITIAL_WEATHER,
-    MAX_SUN_ELEVATION_SUMMER, MAX_SUN_ELEVATION_WINTER, SUN_AZIMUTH_SWING
+    MAX_SUN_ELEVATION_SUMMER, MAX_SUN_ELEVATION_WINTER, SUN_AZIMUTH_SWING,
 } from './constants';
+import { BUILDING_TYPES } from './buildings/BuildingTypes';
 
 const HexMap = () => {
     const mountRef = useRef(null);
@@ -24,9 +25,8 @@ const HexMap = () => {
             MAP_GENERATOR_DEFAULTS.NOISE_STRENGTH, MAP_GENERATOR_DEFAULTS.WARP_FACTOR,
             MAP_GENERATOR_DEFAULTS.ISLAND_BORDER_FACTOR, MAP_GENERATOR_DEFAULTS.RANDOMNESS_FACTOR
         );
-    }, []);
+    }, []); // Empty dependency array means this runs once on mount
 
-    // useThreeScene now returns building palette state and handlers
     const buildingInteraction = useThreeScene(
         mountRef,
         islandHeightData,
@@ -42,7 +42,7 @@ const HexMap = () => {
     );
     const moonTime = (timeOfDay + 12) % 24;
     const { elevation: currentMoonElevation } = calculateSunPosition(
-        moonTime, season, 70, 70, 90
+        moonTime, season, 70, 70, 90 // Moon's max elevation and azimuth swing (can be adjusted)
     );
 
     const currentSunLightUIColor = getSunLightColor(currentSunElevation);
@@ -63,7 +63,10 @@ const HexMap = () => {
                     selectedTile={buildingInteraction.selectedTileForBuilding}
                     onBuild={buildingInteraction.onBuild}
                     onCancel={buildingInteraction.onCancel}
-                    existingBuildingType={buildingInteraction.existingBuildingOnSelectedTile}
+                    existingBuildingType={buildingInteraction.existingBuildingOnSelectedTile?.type}
+                    existingBuildingRotation={buildingInteraction.existingBuildingOnSelectedTile?.rotationY}
+                    onUpdateBuilding={buildingInteraction.onUpdateBuilding}
+                    availableBuildingTypes={Object.values(BUILDING_TYPES)}
                 />
             )}
         </div>
