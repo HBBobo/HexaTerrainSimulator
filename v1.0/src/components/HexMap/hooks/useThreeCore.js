@@ -10,17 +10,27 @@ const POINTY_HEX_VERT_SPACING_CALC = POINTY_HEX_TRUE_HEIGHT_CALC * 0.75;
 
 const useThreeCore = (mountRef, gridColumns, gridRows) => {
     const [coreState, setCoreState] = useState(null);
+    const sceneIdRef = useRef(null); // To track scene instance
 
     useEffect(() => {
         const currentMount = mountRef.current;
         if (!currentMount) {
-            if (coreState) setCoreState(null);
+            if (coreState) {
+                console.log("useThreeCore: Mount ref cleared, clearing core state.");
+                setCoreState(null);
+            }
             return;
         }
 
         console.log("useThreeCore: Initializing...");
 
         const scene = new THREE.Scene();
+        if (sceneIdRef.current !== scene.uuid) {
+            console.log(`useThreeCore: New Scene ID: ${scene.uuid} (Previous: ${sceneIdRef.current})`);
+            sceneIdRef.current = scene.uuid;
+        } else {
+            console.log(`useThreeCore: Re-running useEffect but Scene ID is the same: ${scene.uuid}`);
+        }
         scene.fog = new THREE.Fog(0x111122, 50, 300);
 
         const worldMapWidth = gridColumns * POINTY_HEX_TRUE_WIDTH_CALC;
@@ -35,8 +45,10 @@ const useThreeCore = (mountRef, gridColumns, gridRows) => {
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
-        if (currentMount.firstChild) {
+        renderer.outputColorSpace = THREE.SRGBColorSpace; // Corrected from outputEncoding
+
+        // Clear previous renderer DOM element if any
+        while (currentMount.firstChild) {
             currentMount.removeChild(currentMount.firstChild);
         }
         currentMount.appendChild(renderer.domElement);
@@ -49,7 +61,7 @@ const useThreeCore = (mountRef, gridColumns, gridRows) => {
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
         scene.add(ambientLight);
 
-        console.log("useThreeCore: Core initialized, setting state.");
+        console.log("useThreeCore: Core initialized, setting state with scene:", scene.uuid);
         setCoreState({
             scene, camera, renderer, controls, ambientLight,
             worldMapWidth, worldMapDepth,
@@ -57,13 +69,9 @@ const useThreeCore = (mountRef, gridColumns, gridRows) => {
         });
 
         const handleResize = () => {
-            const currentCoreState = coreState;
-            if (currentCoreState && currentCoreState.isReady && currentMount) {
-                const { camera: cam, renderer: rend } = currentCoreState;
-                cam.aspect = currentMount.clientWidth / currentMount.clientHeight;
-                cam.updateProjectionMatrix();
-                rend.setSize(currentMount.clientWidth, currentMount.clientHeight);
-            } else if (camera && renderer && currentMount) {
+            // Use the camera and renderer instances from this effect's closure
+            // to avoid issues if coreState hasn't updated yet.
+            if (camera && renderer && currentMount) {
                 camera.aspect = currentMount.clientWidth / currentMount.clientHeight;
                 camera.updateProjectionMatrix();
                 renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
@@ -72,20 +80,23 @@ const useThreeCore = (mountRef, gridColumns, gridRows) => {
         window.addEventListener('resize', handleResize);
 
         return () => {
-            console.log("useThreeCore: Cleaning up...");
+            console.log("useThreeCore: Cleaning up scene:", scene.uuid);
             window.removeEventListener('resize', handleResize);
 
             if (controls) controls.dispose();
-            if (ambientLight && scene?.remove) scene.remove(ambientLight);
+            // scene.remove(ambientLight); // Ambient light is part of this scene, will be disposed with it
             if (renderer) {
                 if (currentMount && renderer.domElement && currentMount.contains(renderer.domElement)) {
                     try { currentMount.removeChild(renderer.domElement); } catch (e) {/*ignore*/ }
                 }
                 renderer.dispose();
             }
-            setCoreState(null);
+            // scene.dispose(); // Dispose scene resources if necessary, though Three.js often handles children.
+            // Forcing a clear of coreState might be too aggressive if other hooks depend on its stability.
+            // setCoreState(null); // Let's see if not nulling it out helps, and rely on new instance replacing.
+            sceneIdRef.current = null; // Reset for next potential init
         };
-    }, [mountRef, gridColumns, gridRows]);
+    }, [mountRef, gridColumns, gridRows]); // Dependencies
 
     return coreState;
 };

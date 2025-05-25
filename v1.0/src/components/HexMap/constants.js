@@ -1,4 +1,5 @@
 // src/components/HexMap/constants.js
+import { BUILDING_TYPES as BT } from './buildings/BuildingTypes'; // Import with an alias if needed
 
 // --- Grid & Hex Dimensions ---
 export const HEX_SIZE = 1;
@@ -27,6 +28,14 @@ export const DULL_TILE_COLORS = {
     [TILE_TYPES.FOREST]: 0x808060, [TILE_TYPES.STONE]: 0x778899, [TILE_TYPES.MOUNTAIN_PEAK]: 0xA9A9A9,
 };
 export const TILE_COLORS = DULL_TILE_COLORS;
+
+// --- Building Types ---
+// Now imported, but keep BUILDABLE_TILE_TYPES here or move it with BUILDING_TYPES
+export const BUILDING_TYPES = BT; // Re-export if other files import from constants
+export const BUILDABLE_TILE_TYPES = [
+    TILE_TYPES.SAND, TILE_TYPES.CLAY, TILE_TYPES.PASTURE, TILE_TYPES.FOREST, TILE_TYPES.STONE
+];
+
 
 // --- Map Generation & Biome Thresholds ---
 export const WATER_SURFACE_ELEVATION_NORMALIZED = TRANSPARENT_LAYER_Y / HEX_HEIGHT_MAX;
@@ -59,13 +68,13 @@ export const NUMBER_OF_FOXES = 5;
 export const FOX_MAX_JUMP_HEIGHT_DIFFERENCE = HEX_SIZE * 0.75;
 
 // --- Fox Footprints ---
-export const FOX_FOOTPRINT_TEXTURE_URL = 'https://cdn0.iconfinder.com/data/icons/footprints-3/64/FOX-fox_terrier-wildlife-animals-carnivore-512.png'; // Replace with your texture
+export const FOX_FOOTPRINT_TEXTURE_URL = 'https://cdn0.iconfinder.com/data/icons/footprints-3/64/FOX-fox_terrier-wildlife-animals-carnivore-512.png';
 export const FOX_FOOTPRINT_SIZE = 0.1;
-export const FOX_FOOTPRINT_LIFETIME_SECONDS = 15.0; // How long footprints last
-export const FOX_FOOTPRINT_INTERVAL_SECONDS = 0.35; // Time between dropping footprints while moving
+export const FOX_FOOTPRINT_LIFETIME_SECONDS = 15.0;
+export const FOX_FOOTPRINT_INTERVAL_SECONDS = 0.35;
 export const FOX_FOOTPRINT_OPACITY = 0.6;
-export const FOX_FOOTPRINT_Y_OFFSET = 0.015; // Slightly above ground to prevent z-fighting
-export const MIN_SNOW_FOR_FOOTPRINTS = 0.3; // Min snowAccumulationRatio for footprints
+export const FOX_FOOTPRINT_Y_OFFSET = 0.015;
+export const MIN_SNOW_FOR_FOOTPRINTS = 0.3;
 
 // --- Sun, Moon & Lighting ---
 export const SHADOW_MAP_SIZE = 4096 * 4;

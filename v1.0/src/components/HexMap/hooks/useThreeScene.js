@@ -1,5 +1,5 @@
 // src/components/HexMap/hooks/useThreeScene.js
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import useThreeCore from './useThreeCore';
 import useSunAndSky from './useSunAndSky';
@@ -7,7 +7,13 @@ import useWorldGeometry from './useWorldGeometry';
 import useWater from './useWater';
 import useFoxes from './useFoxes';
 import useWeatherEffects from './useWeatherEffects';
-import { SEASONS, WEATHER_TYPES, SNOW_ACCUMULATION_SECONDS, SNOW_MELT_SECONDS } from '../constants';
+import useBuildings from '../buildings/useBuildings'; // UPDATED PATH
+import { SEASONS, WEATHER_TYPES, SNOW_ACCUMULATION_SECONDS, SNOW_MELT_SECONDS, BUILDABLE_TILE_TYPES, BUILDING_TYPES } from '../constants';
+
+// ... (rest of the useThreeScene hook remains the same as the last fully working version)
+// The only change is the import path for useBuildings.
+// For brevity, I'm not pasting the whole file again.
+// Ensure the rest of useThreeScene.js is identical to the version provided in your previous "okay, thanks..." message's correct version.
 
 const useThreeScene = (
     mountRef,
@@ -21,13 +27,52 @@ const useThreeScene = (
     const [isFullyInitialized, setIsFullyInitialized] = useState(false);
     const animationFrameIdRef = useRef(null);
     const clockRef = useRef(null);
-    const allElementsCacheRef = useRef({});
+    const systemsRef = useRef({});
 
     const [snowAccumulationRatio, setSnowAccumulationRatio] = useState(0);
     const targetSnowAccumulationRef = useRef(0);
 
-    const coreElements = useThreeCore(mountRef, gridColumns, gridRows);
-    allElementsCacheRef.current.core = coreElements;
+    const [selectedTileForBuilding, setSelectedTileForBuilding] = useState(null);
+    const [isBuildingPaletteOpen, setIsBuildingPaletteOpen] = useState(false);
+    const [existingBuildingOnSelectedTile, setExistingBuildingOnSelectedTile] = useState(null);
+
+    systemsRef.current.core = useThreeCore(mountRef, gridColumns, gridRows);
+
+    systemsRef.current.sunSky = useSunAndSky(
+        systemsRef.current.core, timeOfDay, season, weatherCondition, snowAccumulationRatio
+    );
+
+    systemsRef.current.buildings = useBuildings( // This hook is now imported from the new path
+        systemsRef.current.core,
+        snowAccumulationRatio,
+        timeOfDay
+    );
+
+    systemsRef.current.worldGeometry = useWorldGeometry(
+        systemsRef.current.core,
+        islandHeightData, weatherCondition, season, snowAccumulationRatio,
+        systemsRef.current.buildings?.getBuildingOnTile
+    );
+
+    systemsRef.current.water = useWater(systemsRef.current.core);
+
+    systemsRef.current.foxes = useFoxes(
+        systemsRef.current.core,
+        systemsRef.current.worldGeometry?.landTiles,
+        systemsRef.current.worldGeometry?.landTileMap,
+        gridColumns, gridRows, season, snowAccumulationRatio
+    );
+
+    systemsRef.current.weatherEffects = useWeatherEffects(
+        systemsRef.current.core, weatherCondition, season
+    );
+
+    useEffect(() => {
+        if (systemsRef.current.core && systemsRef.current.sunSky) {
+            systemsRef.current.core.sunSky = systemsRef.current.sunSky;
+        }
+    }, [systemsRef.current.core, systemsRef.current.sunSky]);
+
 
     useEffect(() => {
         const isSnowingInWinter = season === SEASONS.WINTER && weatherCondition === WEATHER_TYPES.SNOW;
@@ -35,67 +80,85 @@ const useThreeScene = (
     }, [season, weatherCondition]);
 
 
-    const sunSkyElements = useSunAndSky(
-        coreElements,
-        timeOfDay,
-        season,
-        weatherCondition,
-        snowAccumulationRatio
-    );
-    allElementsCacheRef.current.sunSky = sunSkyElements;
+    const raycasterRef = useRef(new THREE.Raycaster());
+    const mousePositionRef = useRef(new THREE.Vector2());
 
-    const worldGeometryElements = useWorldGeometry(
-        coreElements,
-        islandHeightData,
-        weatherCondition,
-        season,
-        snowAccumulationRatio
-    );
-    allElementsCacheRef.current.worldGeometry = worldGeometryElements;
+    const handleCanvasClick = useCallback((event) => {
+        const { core, worldGeometry, buildings } = systemsRef.current;
+        if (!core || !core.isReady || !worldGeometry || !worldGeometry.isReady || !mountRef.current) return;
 
-    const waterElements = useWater(
-        coreElements
-    );
-    allElementsCacheRef.current.water = waterElements;
+        const { camera } = core;
+        const { hexMeshesForRaycasting } = worldGeometry;
 
-    const foxSystem = useFoxes(
-        coreElements,
-        worldGeometryElements?.landTiles,
-        worldGeometryElements?.landTileMap,
-        gridColumns,
-        gridRows,
-        season, // Pass season
-        snowAccumulationRatio // Pass snowAccumulationRatio
-    );
-    allElementsCacheRef.current.foxes = foxSystem;
+        if (!hexMeshesForRaycasting || hexMeshesForRaycasting.length === 0) return;
 
-    const weatherEffectSystem = useWeatherEffects(
-        coreElements,
-        weatherCondition,
-        season
-    );
-    allElementsCacheRef.current.weatherEffects = weatherEffectSystem;
+        const rect = mountRef.current.getBoundingClientRect();
+        mousePositionRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mousePositionRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
+        raycasterRef.current.setFromCamera(mousePositionRef.current, camera);
+        const intersects = raycasterRef.current.intersectObjects(hexMeshesForRaycasting, false);
+
+        if (intersects.length > 0) {
+            const firstIntersect = intersects[0].object;
+            if (firstIntersect.userData && firstIntersect.userData.isHexTile) {
+                const tileData = firstIntersect.userData.tileData;
+
+                if (BUILDABLE_TILE_TYPES.includes(tileData.type)) {
+                    setSelectedTileForBuilding(tileData);
+                    const existingBuilding = buildings && typeof buildings.getBuildingOnTile === 'function'
+                        ? buildings.getBuildingOnTile(tileData.c, tileData.r)
+                        : undefined;
+                    setExistingBuildingOnSelectedTile(existingBuilding ? existingBuilding.type : null);
+                    setIsBuildingPaletteOpen(true);
+                } else {
+                    setIsBuildingPaletteOpen(false);
+                    setSelectedTileForBuilding(null);
+                }
+            }
+        } else {
+            setIsBuildingPaletteOpen(false);
+            setSelectedTileForBuilding(null);
+        }
+    }, []);
 
     useEffect(() => {
-        const coreRdy = coreElements && coreElements.isReady;
-        const sunSkyRdy = sunSkyElements && sunSkyElements.isReady;
-        const worldRdy = worldGeometryElements && worldGeometryElements.isReady && worldGeometryElements.landTiles && worldGeometryElements.landTileMap;
-        const waterRdy = waterElements && waterElements.isReady;
-        const baseSystemsRdy = !!(coreRdy && sunSkyRdy && worldRdy && waterRdy);
+        const currentMount = mountRef.current;
+        if (currentMount) {
+            currentMount.addEventListener('click', handleCanvasClick);
+        }
+        return () => {
+            if (currentMount) {
+                currentMount.removeEventListener('click', handleCanvasClick);
+            }
+        };
+    }, [handleCanvasClick]);
 
-        const foxesActuallyRdy = foxSystem ? foxSystem.isReady : true;
-        const weatherEffectsActuallyRdy = weatherEffectSystem ? weatherEffectSystem.isReady : true;
+    useEffect(() => {
+        const { core, sunSky, worldGeometry, water, buildings, foxes, weatherEffects } = systemsRef.current;
+
+        const coreRdy = core?.isReady;
+        const sunSkyRdy = sunSky?.isReady;
+        const worldRdyCheck = worldGeometry?.isReady &&
+            worldGeometry?.landTiles &&
+            worldGeometry?.landTileMap &&
+            worldGeometry?.hexMeshesForRaycasting;
+        const waterRdy = water?.isReady;
+        const buildingsRdy = buildings?.isReady && typeof buildings?.getBuildingOnTile === 'function';
+
+        const baseSystemsRdy = !!(coreRdy && sunSkyRdy && worldRdyCheck && waterRdy && buildingsRdy);
+
+        const foxesActuallyRdy = !foxes || foxes.isReady;
+        const weatherEffectsActuallyRdy = !weatherEffects || weatherEffects.isReady;
 
         const allSystemsGo = baseSystemsRdy && foxesActuallyRdy && weatherEffectsActuallyRdy;
 
         if (allSystemsGo !== isFullyInitialized) {
             if (allSystemsGo) console.log("useThreeScene: All systems GO! Fully initialized.");
-            else console.log("useThreeScene: Waiting for systems...", { coreRdy, sunSkyRdy: sunSkyElements?.isReady, worldRdy, waterRdy, foxesActuallyRdy, weatherEffectsActuallyRdy });
+            else console.log("useThreeScene: Waiting for systems...", { coreRdy, sunSkyRdy, worldRdy: worldRdyCheck, waterRdy, buildingsRdy: buildings?.isReady, getBuildingFuncReady: typeof buildings?.getBuildingOnTile === 'function', foxesActuallyRdy, weatherEffectsActuallyRdy });
             setIsFullyInitialized(allSystemsGo);
         }
-    }, [coreElements, sunSkyElements, worldGeometryElements, waterElements, foxSystem, weatherEffectSystem, isFullyInitialized]);
-
+    }, [isFullyInitialized, systemsRef.current.core, systemsRef.current.sunSky, systemsRef.current.worldGeometry, systemsRef.current.water, systemsRef.current.buildings, systemsRef.current.foxes, systemsRef.current.weatherEffects]);
 
     useEffect(() => {
         if (!isFullyInitialized || !mountRef.current) {
@@ -115,9 +178,9 @@ const useThreeScene = (
 
         const animate = () => {
             animationFrameIdRef.current = requestAnimationFrame(animate);
+            const { core, sunSky, worldGeometry, water, buildings, foxes, weatherEffects } = systemsRef.current;
 
-            const elements = allElementsCacheRef.current;
-            if (!elements.core || !elements.core.isReady || !isFullyInitialized) {
+            if (!core || !core.isReady || !isFullyInitialized) {
                 return;
             }
 
@@ -137,18 +200,19 @@ const useThreeScene = (
                 return newRatio;
             });
 
-            if (elements.water?.isReady && elements.water?.updateAnimation) elements.water.updateAnimation(deltaTime);
-            if (elements.worldGeometry?.isReady && elements.worldGeometry?.updateAnimations) elements.worldGeometry.updateAnimations(elapsedTime);
-            if (elements.foxes?.isReady && elements.foxes?.updateFoxes) elements.foxes.updateFoxes(deltaTime, elapsedTime);
+            if (water?.isReady && water?.updateAnimation) water.updateAnimation(deltaTime);
+            if (worldGeometry?.isReady && worldGeometry?.updateAnimations) worldGeometry.updateAnimations(elapsedTime);
+            if (buildings?.isReady && buildings?.updateBuildingAnimations) buildings.updateBuildingAnimations(elapsedTime);
+            if (foxes?.isReady && foxes?.updateFoxes) foxes.updateFoxes(deltaTime, elapsedTime);
 
-            if (elements.weatherEffects?.isReady) {
-                if (elements.weatherEffects?.updateRain) elements.weatherEffects.updateRain(deltaTime);
-                if (elements.weatherEffects?.updateSnow) elements.weatherEffects.updateSnow(deltaTime);
+            if (weatherEffects?.isReady) {
+                if (weatherEffects?.updateRain) weatherEffects.updateRain(deltaTime);
+                if (weatherEffects?.updateSnow) weatherEffects.updateSnow(deltaTime);
             }
 
-            if (elements.core.controls) elements.core.controls.update();
-            if (elements.core.renderer && elements.core.scene && elements.core.camera) {
-                elements.core.renderer.render(elements.core.scene, elements.core.camera);
+            if (core.controls) core.controls.update();
+            if (core.renderer && core.scene && core.camera) {
+                core.renderer.render(core.scene, core.camera);
             }
         };
 
@@ -166,7 +230,28 @@ const useThreeScene = (
         };
     }, [isFullyInitialized, mountRef]);
 
-    return null;
+
+    const handleBuildRequest = useCallback((tile, buildingType) => {
+        const { buildings } = systemsRef.current;
+        if (buildings && buildings.addBuilding) {
+            buildings.addBuilding(tile, buildingType);
+        }
+        setIsBuildingPaletteOpen(false);
+        setSelectedTileForBuilding(null);
+    }, []);
+
+    const handleCancelBuild = useCallback(() => {
+        setIsBuildingPaletteOpen(false);
+        setSelectedTileForBuilding(null);
+    }, []);
+
+    return {
+        isBuildingPaletteOpen,
+        selectedTileForBuilding,
+        existingBuildingOnSelectedTile,
+        onBuild: handleBuildRequest,
+        onCancel: handleCancelBuild,
+    };
 };
 
 export default useThreeScene;

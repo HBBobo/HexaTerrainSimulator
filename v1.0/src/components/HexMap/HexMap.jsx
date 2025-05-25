@@ -2,6 +2,7 @@
 import React, { useRef, useState, useMemo } from 'react';
 import useThreeScene from './hooks/useThreeScene';
 import SunControls from './ui/SunControls';
+import BuildingPalette from './ui/BuildingPalette'; // Import BuildingPalette
 import { generateCoolIslandMap } from './utils/mapGenerator';
 import { getSunLightColor, getMoonLightColor, calculateSunPosition } from './utils/colorUtils';
 import {
@@ -25,7 +26,8 @@ const HexMap = () => {
         );
     }, []);
 
-    useThreeScene(
+    // useThreeScene now returns building palette state and handlers
+    const buildingInteraction = useThreeScene(
         mountRef,
         islandHeightData,
         GRID_COLUMNS,
@@ -56,6 +58,14 @@ const HexMap = () => {
                 currentSunColor={currentSunLightUIColor}
                 currentMoonColor={currentMoonLightUIColor}
             />
+            {buildingInteraction && buildingInteraction.isBuildingPaletteOpen && (
+                <BuildingPalette
+                    selectedTile={buildingInteraction.selectedTileForBuilding}
+                    onBuild={buildingInteraction.onBuild}
+                    onCancel={buildingInteraction.onCancel}
+                    existingBuildingType={buildingInteraction.existingBuildingOnSelectedTile}
+                />
+            )}
         </div>
     );
 };
